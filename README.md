@@ -1,11 +1,11 @@
 # Mantle Lit
 
-A lightweight library for building Lit web components with a simpler class-based API and MobX reactivity built in.
+A lightweight library for building Lit web components with MobX reactivity. Extends LitElement with automatic observable state, computed getters, and bound actions.
 
 ## Installation
 
 ```bash
-npm install mantle-lit
+npm install mantle-lit lit mobx
 ```
 
 Requires Lit 3+ and MobX 6+.
@@ -15,14 +15,18 @@ Requires Lit 3+ and MobX 6+.
 ```ts
 import { View, createView } from 'mantle-lit';
 import { html } from 'lit';
+import { property } from 'lit/decorators.js';
 
-class CounterView extends View.props({
-  initial: Number,
-}) {
+class CounterView extends View {
+  // Props - use @property for Lit reactivity and IDE autocomplete
+  @property({ type: Number, attribute: false })
+  initialCount = 0;
+
+  // Internal state - auto-observable
   count = 0;
 
   onCreate() {
-    this.count = this.props.initial ?? 0;
+    this.count = this.initialCount;
   }
 
   increment() {
@@ -39,23 +43,30 @@ class CounterView extends View.props({
 }
 
 export const Counter = createView(CounterView, { tag: 'x-counter' });
+
+// Register type for IDE autocomplete in templates
+declare global {
+  interface HTMLElementTagNameMap {
+    'x-counter': CounterView;
+  }
+}
 ```
 
 **Usage in HTML (property binding with `.`):**
 ```html
-<x-counter .initial=${5}></x-counter>
+<x-counter .initialCount=${5}></x-counter>
 ```
 
-**Everything is reactive by default.** All properties become observable, getters become computed, and methods become auto-bound actions. No annotations needed.
-
-> Want explicit control? See [Decorators](#decorators) below to opt into manual annotations.
+**Everything is reactive by default.** Internal state becomes observable, getters become computed, and methods become auto-bound actions. Props use Lit's standard `@property()` decorator.
 
 ## Defining Props
 
-Use `View.props()` to define component properties with full TypeScript inference:
+Use Lit's `@property()` decorator for props. Use `attribute: false` since we pass complex data via property binding:
 
 ```ts
-import { View, createView, PropType } from 'mantle-lit';
+import { View, createView } from 'mantle-lit';
+import { html } from 'lit';
+import { property } from 'lit/decorators.js';
 
 interface TodoItem {
   id: number;
@@ -63,46 +74,73 @@ interface TodoItem {
   done: boolean;
 }
 
-class TodoView extends View.props({
-  title: String,
-  initialTodos: Array as PropType<TodoItem[]>,
-  onCountChange: Function as PropType<(count: number) => void>,
-}) {
-  // this.props.title      → string
-  // this.props.initialTodos → TodoItem[]
-  // this.props.onCountChange → (count: number) => void
+class TodoView extends View {
+  @property({ type: String, attribute: false })
+  title = '';
+
+  @property({ type: Array, attribute: false })
+  initialTodos: TodoItem[] = [];
+
+  @property({ attribute: false })
+  onComplete?: (count: number) => void;
+
+  // Internal state (auto-observable, no decorator needed)
+  todos: TodoItem[] = [];
+}
+
+export const Todo = createView(TodoView, { tag: 'x-todo' });
+
+declare global {
+  interface HTMLElementTagNameMap {
+    'x-todo': TodoView;
+  }
 }
 ```
 
-**Type constructors:**
-- `String` → `string`
-- `Number` → `number`
-- `Boolean` → `boolean`
-- `Array` → `any[]` (use `PropType<T[]>` for specific types)
-- `Object` → `object` (use `PropType<T>` for specific types)
-- `Function` → `Function` (use `PropType<(args) => R>` for specific signatures)
+**Why `attribute: false`?** We use property binding (`.prop=${value}`) to pass complex objects, arrays, and functions. Attribute reflection isn't needed and can cause issues with non-primitive types.
 
-**No props?** Just extend `View` directly:
+**No props?** Just extend `View` directly without any `@property()` decorators.
+
+## Scoped Styles
+
+Use Lit's `static styles` for component-scoped CSS:
 
 ```ts
-class SimpleView extends View {
-  // no props needed
-}
-```
+import { View, createView } from 'mantle-lit';
+import { html, css } from 'lit';
 
-## Property Binding
-
-This library is designed for **property binding** (`.prop=${value}`) rather than attribute binding (`attr="value"`). This allows passing complex objects, arrays, and functions as props.
-
-```ts
-// Parent component
-render() {
-  return html`
-    <x-todo-list 
-      .items=${this.todos}
-      .onDelete=${this.handleDelete}
-    ></x-todo-list>
+class MyView extends View {
+  static styles = css`
+    :host {
+      display: block;
+      padding: 1rem;
+    }
+    
+    button {
+      background: #6366f1;
+      color: white;
+    }
   `;
+
+  render() {
+    return html`<button>Click me</button>`;
+  }
+}
+```
+
+For larger components, extract styles to a separate file:
+
+```ts
+// MyView.styles.ts
+import { css } from 'lit';
+export const styles = css`...`;
+
+// MyView.ts
+import { styles } from './MyView.styles';
+
+class MyView extends View {
+  static styles = styles;
+  // ...
 }
 ```
 
@@ -137,7 +175,7 @@ render() {
 ```ts
 onCreate() {
   this.watch(
-    () => this.props.filter,
+    () => this.filter,
     (filter) => this.applyFilter(filter)
   );
 }
@@ -174,9 +212,10 @@ this.watch(
 **Basic example:**
 
 ```ts
-class SearchView extends View.props({
-  placeholder: String,
-}) {
+class SearchView extends View {
+  @property({ type: String, attribute: false })
+  placeholder = '';
+
   query = '';
   results: string[] = [];
 
@@ -198,9 +237,9 @@ class SearchView extends View.props({
 
 ```ts
 onCreate() {
-  this.watch(() => this.props.filter, (filter) => this.applyFilter(filter));
-  this.watch(() => this.props.sort, (sort) => this.applySort(sort));
-  this.watch(() => this.props.page, (page) => this.fetchPage(page));
+  this.watch(() => this.filter, (filter) => this.applyFilter(filter));
+  this.watch(() => this.sort, (sort) => this.applySort(sort));
+  this.watch(() => this.page, (page) => this.fetchPage(page));
 }
 ```
 
@@ -208,7 +247,7 @@ onCreate() {
 
 ```ts
 onCreate() {
-  const stop = this.watch(() => this.props.token, (token) => {
+  const stop = this.watch(() => this.token, (token) => {
     this.authenticate(token);
     stop(); // only needed once
   });
@@ -216,36 +255,6 @@ onCreate() {
 ```
 
 `this.watch` wraps MobX's `reaction` with automatic lifecycle disposal. For advanced MobX patterns (`autorun`, `when`, custom schedulers), use `reaction` directly and return a dispose function from `onMount`.
-
-### Props Reactivity
-
-`this.props` is reactive: your component re-renders when accessed props change.
-
-**Option 1: `this.watch`** — the recommended way to react to state changes:
-
-```ts
-onCreate() {
-  this.watch(
-    () => this.props.filter,
-    (filter) => this.applyFilter(filter)
-  );
-}
-```
-
-Watchers are automatically disposed on unmount. No cleanup needed.
-
-**Option 2: `reaction`** — for advanced MobX patterns (autorun, when, custom schedulers):
-
-```ts
-onMount() {
-  return reaction(
-    () => this.props.filter,
-    (filter) => this.applyFilter(filter)
-  );
-}
-```
-
-Or access props directly in `render()` and MobX handles re-renders when they change.
 
 ## Mounting Components
 
@@ -263,7 +272,48 @@ mount('x-my-component', {
 }, document.body);
 
 // Returns the created element
-const el = mount('x-counter', { initial: 5 }, container);
+const el = mount('x-counter', { initialCount: 5 }, container);
+```
+
+## IDE Autocomplete
+
+For IDE autocomplete in Lit templates, add `HTMLElementTagNameMap` declarations:
+
+```ts
+declare global {
+  interface HTMLElementTagNameMap {
+    'x-my-component': MyComponentView;
+  }
+}
+```
+
+Install the [lit-plugin](https://marketplace.visualstudio.com/items?itemName=runem.lit-plugin) VS Code extension for template type checking.
+
+**CLI validation** (works reliably):
+```bash
+npx lit-analyzer "src/**/*.ts" --strict
+```
+
+Add to your `package.json`:
+```json
+{
+  "scripts": {
+    "lint:lit": "lit-analyzer \"src/**/*.ts\" --strict"
+  }
+}
+```
+
+## TypeScript Configuration
+
+For `@property()` decorators to work correctly:
+
+```json
+{
+  "compilerOptions": {
+    "experimentalDecorators": true,
+    "useDefineForClassFields": false
+  }
+}
 ```
 
 ## Patterns
@@ -275,6 +325,7 @@ State, logic, and template in one class:
 ```ts
 import { View, createView } from 'mantle-lit';
 import { html } from 'lit';
+import { property } from 'lit/decorators.js';
 
 interface TodoItem {
   id: number;
@@ -283,8 +334,15 @@ interface TodoItem {
 }
 
 class TodoView extends View {
+  @property({ type: Array, attribute: false })
+  initialTodos: TodoItem[] = [];
+
   todos: TodoItem[] = [];
   input = '';
+
+  onCreate() {
+    this.todos = this.initialTodos;
+  }
 
   add() {
     this.todos.push({ id: Date.now(), text: this.input, done: false });
@@ -307,6 +365,12 @@ class TodoView extends View {
 }
 
 export const Todo = createView(TodoView, { tag: 'x-todo' });
+
+declare global {
+  interface HTMLElementTagNameMap {
+    'x-todo': TodoView;
+  }
+}
 ```
 
 ### Separated
@@ -314,10 +378,10 @@ export const Todo = createView(TodoView, { tag: 'x-todo' });
 ViewModel and template separate:
 
 ```ts
-import { ViewModel, createView } from 'mantle-lit';
+import { View, createView } from 'mantle-lit';
 import { html } from 'lit';
 
-class TodoViewModel extends ViewModel {
+class TodoViewModel extends View {
   todos: TodoItem[] = [];
   input = '';
 
@@ -340,8 +404,6 @@ const template = (vm: TodoViewModel) => html`
   </div>
 `;
 
-// Note: For separated templates, extend the View class with a render method
-// that calls the template function
 class TodoView extends TodoViewModel {
   render() {
     return template(this);
@@ -358,8 +420,12 @@ For teams that prefer explicit annotations over auto-observable, Mantle provides
 ```ts
 import { View, createView, observable, action, computed } from 'mantle-lit';
 import { html } from 'lit';
+import { property } from 'lit/decorators.js';
 
 class TodoView extends View {
+  @property({ type: String, attribute: false })
+  title = '';
+
   @observable todos: TodoItem[] = [];
   @observable input = '';
 
@@ -413,8 +479,6 @@ class TodoView extends View {
 
 export const Todo = createView(TodoView, { tag: 'x-todo' });
 ```
-
-Note: `this.props` is always reactive regardless of decorator mode.
 
 ## Error Handling
 
@@ -590,43 +654,17 @@ configure({ autoObservable: false });
 | `autoObservable` | `true` | Whether to automatically make View instances observable |
 | `onError` | `console.error` | Global error handler for lifecycle errors (see [Error Handling](#error-handling)) |
 
-### `View` / `ViewModel`
+### `View`
 
-Base class for view components. `ViewModel` is an alias for `View`. Use it when separating the ViewModel from the template for semantic clarity.
-
-**Defining props:**
-
-```ts
-class MyView extends View.props({
-  title: String,
-  items: Array as PropType<Item[]>,
-}) {
-  // this.props is fully typed
-}
-```
+Base class for view components. Extends `LitElement` with MobX integration.
 
 | Property/Method | Description |
 |-----------------|-------------|
-| `props` | Current props (reactive, typed based on `View.props()`) |
 | `onCreate()` | Called when instance created |
 | `onMount()` | Called when connected to DOM, return cleanup (optional) |
 | `onUnmount()` | Called when disconnected from DOM (optional) |
 | `render()` | Return Lit `TemplateResult` |
 | `watch(expr, callback, options?)` | Watch reactive expression, auto-disposed on unmount |
-
-### `PropType<T>`
-
-Type helper for complex prop types:
-
-```ts
-import { PropType } from 'mantle-lit';
-
-View.props({
-  items: Array as PropType<MyItem[]>,
-  onSelect: Function as PropType<(item: MyItem) => void>,
-  config: Object as PropType<{ theme: string; debug: boolean }>,
-})
-```
 
 ### `mount(tag, props, container)`
 
@@ -642,7 +680,7 @@ const element = mount('x-my-component', { title: 'Hello' }, document.body);
 |----------|------|-------------|
 | `tag` | `string` | Custom element tag name |
 | `props` | `object` | Properties to set on the element |
-| `container` | `Element` | Container to append the element to |
+| `container` | `Element \| string` | Container element or selector |
 
 Returns the created element.
 
@@ -673,7 +711,7 @@ export const withMyBehavior = createBehavior(MyBehavior);
 
 ### `createView(ViewClass, options)`
 
-Function that creates and registers a Lit custom element from a View class.
+Function that registers a View class as a custom element.
 
 ```ts
 // Basic

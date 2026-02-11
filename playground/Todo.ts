@@ -111,7 +111,7 @@ class TodoView extends View {
         `)}
       </ul>
       <p class="count">${this.completedCount} of ${this.todos.length} done</p>
-      <x-counter></x-counter>
+      <x-counter .initialCount=${5}></x-counter>
       <p class="window-size">
         ${this.windowSize.width}×${this.windowSize.height}
         ${this.windowSize.isMobile ? ' (mobile)' : ''}

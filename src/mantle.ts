@@ -299,11 +299,11 @@ export class View extends LitElement {
     const annotations: AnnotationsMap<this, never> = {} as AnnotationsMap<this, never>;
 
     // Get the list of Lit-managed properties (from @property decorator or static properties)
-    // Lit stores decorated properties in elementProperties (a Map)
-    const ctor = this.constructor as typeof LitElement & { elementProperties?: Map<string, unknown> };
-    const litProperties = new Set<string>([
+    // Lit stores decorated properties in elementProperties (a Map with PropertyKey keys)
+    const ctor = this.constructor as typeof LitElement & { elementProperties?: Map<PropertyKey, unknown> };
+    const litProperties = new Set<string | symbol>([
       ...Object.keys((ctor as any).properties ?? {}),
-      ...(ctor.elementProperties?.keys() ?? []),
+      ...(ctor.elementProperties ? Array.from(ctor.elementProperties.keys()).filter((k): k is string | symbol => typeof k !== 'number') : []),
     ]);
 
     // Collect own properties (instance state) → observable
