@@ -16,6 +16,9 @@ export {
   action,
   computed,
   
+  // Lit's property decorator (re-exported for convenience)
+  property,
+  
   // Config
   configure,
   

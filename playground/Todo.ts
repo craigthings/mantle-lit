@@ -1,4 +1,4 @@
-import { View, createView, type PropType } from '../src';
+import { View, createView, property } from '../src';
 import { html } from 'lit';
 import { withWindowSize } from './withWindowSize';
 import { styles } from './Todo.styles';
@@ -17,17 +17,25 @@ interface TodoItem {
   done: boolean;
 }
 
-// Using View.props({ ... }) pattern for IDE autocomplete in HTML templates
-class TodoView extends View.props({
-  title: String,
-  initialTodos: Array as PropType<TodoItem[]>,
-  onCountChange: Function as PropType<(count: number) => void>,
-}) {
+class TodoView extends View {
   static styles = styles;
 
+  // Props - use @property for IDE autocomplete
+  // attribute: false prevents reflection to HTML attributes
+  @property({ type: String, attribute: false })
+  title = '';
+
+  @property({ type: Array, attribute: false })
+  initialTodos: TodoItem[] = [];
+
+  @property({ attribute: false })
+  onCountChange: ((count: number) => void) | undefined = undefined;
+
+  // Internal state (auto-observable)
   todos: TodoItem[] = [];
   input = '';
   inputEl: HTMLInputElement | null = null;
+  
   // Factory function (no `new`) — View auto-detects behaviors
   windowSize = withWindowSize(768);
 
@@ -36,12 +44,12 @@ class TodoView extends View.props({
   }
 
   onCreate() {
-    this.todos = this.props.initialTodos ?? [];
+    this.todos = this.initialTodos ?? [];
 
     // Watch completedCount and notify parent — auto-disposed on unmount
     this.watch(
       () => this.completedCount,
-      (count) => this.props.onCountChange?.(count)
+      (count) => this.onCountChange?.(count)
     );
   }
 
@@ -78,7 +86,7 @@ class TodoView extends View.props({
   render() {
     return html`
       <div class="header">
-        <h2>${this.props.title}</h2>
+        <h2>${this.title}</h2>
         <span class="hmr-version">${HRM_VERSION}</span>
       </div>
       <form @submit=${(e: Event) => { e.preventDefault(); this.add(); }}>
@@ -113,3 +121,10 @@ class TodoView extends View.props({
 }
 
 export const Todo = createView(TodoView, { tag: 'x-todo' });
+
+// Declare on HTMLElementTagNameMap for lit-plugin type checking
+declare global {
+  interface HTMLElementTagNameMap {
+    'x-todo': TodoView;
+  }
+}

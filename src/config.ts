@@ -28,7 +28,13 @@ export interface MantleConfig {
   onError?: (error: unknown, context: MantleErrorContext) => void;
 }
 
-export const globalConfig: MantleConfig = {
+// Internal config with required fields
+interface InternalConfig {
+  autoObservable: boolean;
+  onError?: (error: unknown, context: MantleErrorContext) => void;
+}
+
+export const globalConfig: InternalConfig = {
   autoObservable: true,
 };
 

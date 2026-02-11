@@ -1,6 +1,6 @@
 {
   "name": "mantle-lit",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A lightweight library for building Lit web components with a simpler class-based API and MobX reactivity built in.",
   "author": "Craig Albert <me@craigalbert.com>",
   "repository": {
@@ -46,6 +46,7 @@
     "dev": "vite",
     "build": "tsup && npm run analyze",
     "analyze": "cem analyze",
+    "lint:lit": "lit-analyzer playground/**/*.ts --strict",
     "prepublishOnly": "npm run build"
   },
   "peerDependencies": {
@@ -56,7 +57,9 @@
     "@custom-elements-manifest/analyzer": "^0.10.10",
     "@types/node": "^25.2.2",
     "lit": "^3.1.0",
+    "lit-analyzer": "^2.0.3",
     "mobx": "^6.12.0",
+    "ts-lit-plugin": "^2.0.2",
     "tsup": "^8.0.0",
     "typescript": "^5.3.0",
     "vite": "^5.0.0"

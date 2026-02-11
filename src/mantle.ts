@@ -1,5 +1,6 @@
-import { LitElement, type TemplateResult } from 'lit';
-import { makeObservable, observable, computed, action, reaction, runInAction, type AnnotationsMap, type IObservableValue } from 'mobx';
+import { LitElement, type TemplateResult, type CSSResultGroup } from 'lit';
+import { property } from 'lit/decorators.js';
+import { makeObservable, observable, computed, action, reaction, runInAction, type AnnotationsMap } from 'mobx';
 import {
   type BehaviorEntry,
   isBehavior,
@@ -18,6 +19,9 @@ export { observable, action, computed } from './decorators';
 // Re-export from behavior module
 export { createBehavior, Behavior } from './behavior';
 
+// Re-export Lit's property decorator for convenience
+export { property } from 'lit/decorators.js';
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Props Type System
 // ─────────────────────────────────────────────────────────────────────────────
@@ -28,10 +32,10 @@ export { createBehavior, Behavior } from './behavior';
  * 
  * @example
  * ```ts
- * class TodoView extends View({
- *   items: Array as PropType<TodoItem[]>,
- *   onSave: Function as PropType<(item: TodoItem) => void>,
- * }) { }
+ * class TodoView extends View {
+ *   @property({ type: Array })
+ *   items: PropType<TodoItem[]>;
+ * }
  * ```
  */
 export interface PropType<T> {
@@ -41,42 +45,8 @@ export interface PropType<T> {
   (...args: any[]): any;
 }
 
-/** Supported prop constructor types */
-type PropConstructor = 
-  | StringConstructor 
-  | NumberConstructor 
-  | BooleanConstructor 
-  | ArrayConstructor 
-  | ObjectConstructor 
-  | FunctionConstructor
-  | PropType<any>;
-
-/** Props definition object: { propName: Constructor } */
-type PropsDefinition = Record<string, PropConstructor>;
-
-/** Infer TypeScript type from a prop constructor */
-type InferPropType<T> = 
-  T extends PropType<infer U> ? U :
-  T extends StringConstructor ? string :
-  T extends NumberConstructor ? number :
-  T extends BooleanConstructor ? boolean :
-  T extends ArrayConstructor ? any[] :
-  T extends ObjectConstructor ? object :
-  T extends FunctionConstructor ? (...args: any[]) => any :
-  never;
-
-/** Infer props type from a PropsDefinition */
-type InferProps<T extends PropsDefinition> = {
-  [K in keyof T]: InferPropType<T[K]>;
-};
-
-/** Symbol to store props definition on View subclass */
-const PROPS_DEF = Symbol('propsDefinition');
-
 // Base class members that should not be made observable
 const BASE_EXCLUDES = new Set([
-  'props',
-  '_propsBox',
   'onCreate',
   'onMount',
   'onUnmount',
@@ -90,44 +60,54 @@ const BASE_EXCLUDES = new Set([
   '_watchDisposers',
   '_disposeWatchers',
   '_reactionDisposer',
-  '_requestRender',
+  '_mountCleanup',
+  '_initialized',
+  // LitElement internals
+  'connectedCallback',
+  'disconnectedCallback',
+  'attributeChangedCallback',
+  'requestUpdate',
+  'performUpdate',
+  'shouldUpdate',
+  'willUpdate',
+  'update',
+  'firstUpdated',
+  'updated',
+  'createRenderRoot',
+  'renderRoot',
+  'isUpdatePending',
+  'hasUpdated',
+  'updateComplete',
+  'getUpdateComplete',
+  'enableUpdating',
+  'addController',
+  'removeController',
+  'scheduleUpdate',
 ]);
 
 /**
- * Base class for Views. Can be used two ways:
+ * Base class for Views. Extends LitElement directly.
  * 
- * 1. With generic type parameter (manual props interface):
- * ```ts
- * interface CounterProps { initial: number }
- * class CounterView extends View<CounterProps> { }
- * ```
- * 
- * 2. With props definition (inferred types + IDE autocomplete):
- * ```ts
- * class CounterView extends View({
- *   initial: Number,
- *   items: Array as PropType<Item[]>,
- * }) { }
- * ```
+ * Use Lit's @property() decorator to define props that will be
+ * recognized by IDE tooling and web-component-analyzer.
  * 
  * @example
  * ```ts
- * import { View, createView, PropType } from 'mantle-lit';
+ * import { View, createView, property } from 'mantle-lit';
  * import { html } from 'lit';
  * 
- * class CounterView extends View({
- *   initial: Number,
- *   onCountChange: Function as PropType<(count: number) => void>,
- * }) {
+ * class CounterView extends View {
+ *   @property({ type: Number })
+ *   initial = 0;
+ * 
  *   count = 0;
  * 
  *   onCreate() {
- *     this.count = this.props.initial;
+ *     this.count = this.initial;
  *   }
  * 
  *   increment() {
  *     this.count++;
- *     this.props.onCountChange?.(this.count);
  *   }
  * 
  *   render() {
@@ -142,36 +122,40 @@ const BASE_EXCLUDES = new Set([
  * export const Counter = createView(CounterView, { tag: 'x-counter' });
  * ```
  */
-export class ViewBase<P extends object = {}> {
+export class View extends LitElement {
   /** @internal */
-  _propsBox!: IObservableValue<P>;
-
-  /** Access current props (reactive) */
-  get props(): P {
-    return this._propsBox.get();
-  }
-
-  /** @internal — called by the element to update props */
-  _syncProps(value: P) {
-    runInAction(() => {
-      this._propsBox.set(value);
-    });
-  }
+  private _behaviors: BehaviorEntry[] = [];
 
   /** @internal */
-  _behaviors: BehaviorEntry[] = [];
-
-  /** @internal */
-  _watchDisposers: (() => void)[] = [];
+  private _watchDisposers: (() => void)[] = [];
 
   /** @internal - MobX reaction disposer for auto-render */
-  _reactionDisposer?: () => void;
+  private _reactionDisposer?: () => void;
 
-  /** @internal - Callback to request a render from the element */
-  _requestRender?: () => void;
+  /** @internal - Cleanup function from onMount */
+  private _mountCleanup?: () => void;
 
+  /** @internal - Track if we've initialized MobX */
+  private _initialized = false;
+
+  /** @internal - Options passed from createView */
+  static _viewOptions?: { autoObservable: boolean; shadow: boolean };
+
+  /**
+   * Called when the component is created, before first render.
+   * Props are available at this point.
+   */
   onCreate?(): void;
+
+  /**
+   * Called when the component is connected to the DOM.
+   * Return a cleanup function that will be called on disconnect.
+   */
   onMount?(): void | (() => void);
+
+  /**
+   * Called when the component is disconnected from the DOM.
+   */
   onUnmount?(): void;
 
   /**
@@ -229,7 +213,7 @@ export class ViewBase<P extends object = {}> {
   }
 
   /** @internal */
-  _disposeWatchers(): void {
+  private _disposeWatchers(): void {
     for (const dispose of this._watchDisposers) {
       dispose();
     }
@@ -237,7 +221,7 @@ export class ViewBase<P extends object = {}> {
   }
 
   /** @internal - Scan own properties for behavior instances and register them */
-  _collectBehaviors(): void {
+  private _collectBehaviors(): void {
     for (const key of Object.keys(this)) {
       if (key.startsWith('_')) continue;
       const value = (this as any)[key];
@@ -248,142 +232,207 @@ export class ViewBase<P extends object = {}> {
   }
 
   /** @internal */
-  _mountBehaviors(): void {
+  private _mountBehaviors(): void {
     for (const behavior of this._behaviors) {
       mountBehavior(behavior);
     }
   }
 
   /** @internal */
-  _unmountBehaviors(): void {
+  private _unmountBehaviors(): void {
     for (const behavior of this._behaviors) {
       unmountBehavior(behavior);
     }
   }
 
-  render?(): TemplateResult | null;
+  /** @internal - Initialize MobX observability */
+  private _initMobX(): void {
+    if (this._initialized) return;
+    this._initialized = true;
 
-  /** @internal - Props definition for Lit properties */
-  static [PROPS_DEF]?: PropsDefinition;
-}
+    const ViewClass = this.constructor as typeof View;
+    const options = ViewClass._viewOptions ?? { autoObservable: globalConfig.autoObservable, shadow: true };
 
-/**
- * Creates a View base class with typed props from a props definition.
- * This enables IDE autocomplete for component properties in HTML templates.
- * 
- * @param propsDefinition - Object mapping prop names to their constructors
- * @returns A View class with typed props
- * 
- * @example
- * ```ts
- * class TodoView extends View.props({
- *   title: String,
- *   items: Array as PropType<TodoItem[]>,
- *   onSave: Function as PropType<(item: TodoItem) => void>,
- * }) {
- *   // this.props.title is typed as string
- *   // this.props.items is typed as TodoItem[]
- *   // this.props.onSave is typed as (item: TodoItem) => void
- * }
- * ```
- */
+    // Collect behavior instances from properties (must happen before makeObservable)
+    this._collectBehaviors();
 
-// Type for the class returned by View.props()
-type ViewWithProps<T extends PropsDefinition> = {
-  new(): View<InferProps<T>>;
-  prototype: View<InferProps<T>>;
-  [PROPS_DEF]: T;
-} & Pick<typeof ViewBase, keyof typeof ViewBase>;
+    // Check for Mantle decorator annotations first
+    const decoratorAnnotations = getAnnotations(this);
 
-// Extend ViewBase with a static `props` method for the factory pattern
-export class View<P extends object = {}> extends ViewBase<P> {
-  /**
-   * Create a View class with typed props from a definition object.
-   * Use this for IDE autocomplete support in HTML templates.
-   */
-  static props<T extends PropsDefinition>(propsDefinition: T): ViewWithProps<T> {
-    // @ts-ignore - Dynamic class creation
-    class TypedView extends View<InferProps<T>> {
-      static [PROPS_DEF] = propsDefinition;
+    if (decoratorAnnotations) {
+      // Mantle decorators: use collected annotations
+      // Auto-bind all methods for stable `this` references
+      const annotations = { ...decoratorAnnotations };
+
+      // Walk prototype chain to auto-bind methods not explicitly decorated
+      let proto = Object.getPrototypeOf(this);
+      while (proto && proto !== View.prototype && proto !== LitElement.prototype) {
+        const descriptors = Object.getOwnPropertyDescriptors(proto);
+        for (const [key, descriptor] of Object.entries(descriptors)) {
+          if (BASE_EXCLUDES.has(key)) continue;
+          if (key in annotations) continue;
+          if (typeof descriptor.value === 'function') {
+            annotations[key] = action.bound;
+          }
+        }
+        proto = Object.getPrototypeOf(proto);
+      }
+
+      makeObservable(this, annotations as AnnotationsMap<this, never>);
+    } else if (options.autoObservable) {
+      this._makeViewObservable();
+    } else {
+      // For legacy decorator users: applies decorator metadata
+      makeObservable(this);
     }
-    return TypedView as unknown as ViewWithProps<T>;
+
+    // Set up MobX reaction to trigger renders when observables change
+    this._reactionDisposer = reaction(
+      () => this.render(),
+      () => this.requestUpdate(),
+      { fireImmediately: false }
+    );
+  }
+
+  /** @internal - Make all properties observable */
+  private _makeViewObservable(): void {
+    const annotations: AnnotationsMap<this, never> = {} as AnnotationsMap<this, never>;
+
+    // Get the list of Lit-managed properties (from @property decorator or static properties)
+    // Lit stores decorated properties in elementProperties (a Map)
+    const ctor = this.constructor as typeof LitElement & { elementProperties?: Map<string, unknown> };
+    const litProperties = new Set<string>([
+      ...Object.keys((ctor as any).properties ?? {}),
+      ...(ctor.elementProperties?.keys() ?? []),
+    ]);
+
+    // Collect own properties (instance state) → observable
+    const ownKeys = new Set([
+      ...Object.keys(this),
+      ...Object.keys(Object.getPrototypeOf(this)),
+    ]);
+
+    for (const key of ownKeys) {
+      if (BASE_EXCLUDES.has(key)) continue;
+      if (key.startsWith('_')) continue;
+      if (key in annotations) continue;
+      // Skip Lit-managed properties - they have their own reactivity
+      if (litProperties.has(key)) continue;
+
+      const value = (this as any)[key];
+
+      // Skip functions (these are handled in the prototype walk)
+      if (typeof value === 'function') continue;
+
+      // Skip behavior instances (they're already observable)
+      if (isBehavior(value)) {
+        (annotations as any)[key] = observable.ref;
+        continue;
+      }
+
+      (annotations as any)[key] = observable;
+    }
+
+    // Walk prototype chain up to (but not including) View
+    let proto = Object.getPrototypeOf(this);
+    while (proto && proto !== View.prototype && proto !== LitElement.prototype) {
+      const descriptors = Object.getOwnPropertyDescriptors(proto);
+
+      for (const [key, descriptor] of Object.entries(descriptors)) {
+        if (BASE_EXCLUDES.has(key)) continue;
+        if (key.startsWith('_')) continue;
+        if (key in annotations) continue;
+        // Skip Lit-managed properties - they create getters/setters on prototype
+        if (litProperties.has(key)) continue;
+
+        if (descriptor.get) {
+          // Getter → computed
+          (annotations as any)[key] = computed;
+        } else if (typeof descriptor.value === 'function') {
+          // Method → action.bound
+          (annotations as any)[key] = action.bound;
+        }
+      }
+
+      proto = Object.getPrototypeOf(proto);
+    }
+
+    makeObservable(this, annotations);
+  }
+
+  // Override createRenderRoot to support shadow: false
+  createRenderRoot(): HTMLElement | DocumentFragment {
+    const ViewClass = this.constructor as typeof View;
+    const options = ViewClass._viewOptions;
+    if (options && !options.shadow) {
+      return this;
+    }
+    return super.createRenderRoot();
+  }
+
+  connectedCallback(): void {
+    // Initialize MobX before super.connectedCallback() triggers first render
+    this._initMobX();
+
+    // Call onCreate before first render (wrapped in action for MobX strict mode)
+    try {
+      runInAction(() => this.onCreate?.());
+    } catch (e) {
+      reportError(e, { phase: 'onCreate', name: this.constructor.name, isBehavior: false });
+    }
+
+    super.connectedCallback();
+
+    // Mount behaviors
+    this._mountBehaviors();
+
+    // Call onMount
+    try {
+      const result = this.onMount?.();
+      if (process.env.NODE_ENV !== 'production' && result instanceof Promise) {
+        console.error(
+          `[mantle-lit] ${this.constructor.name}.onMount() returned a Promise. ` +
+          `Lifecycle methods must be synchronous. Use a sync onMount that ` +
+          `calls an async method instead.`
+        );
+      }
+      this._mountCleanup = result as (() => void) | undefined;
+    } catch (e) {
+      reportError(e, { phase: 'onMount', name: this.constructor.name, isBehavior: false });
+    }
+  }
+
+  disconnectedCallback(): void {
+    super.disconnectedCallback();
+
+    // Call mount cleanup
+    this._mountCleanup?.();
+
+    // Call onUnmount
+    try {
+      this.onUnmount?.();
+    } catch (e) {
+      reportError(e, { phase: 'onUnmount', name: this.constructor.name, isBehavior: false });
+    }
+
+    // Dispose watchers
+    this._disposeWatchers();
+
+    // Unmount behaviors
+    this._unmountBehaviors();
+
+    // Dispose the render reaction
+    this._reactionDisposer?.();
+  }
+
+  // Subclasses must implement render
+  render(): TemplateResult | null {
+    throw new Error(`[mantle-lit] ${this.constructor.name}: Missing render() method.`);
   }
 }
 
 /** Alias for View - use when separating ViewModel from template */
 export const ViewModel = View;
-
-/**
- * Creates observable annotations for a View subclass instance.
- * This is needed because makeAutoObservable doesn't work with inheritance.
- */
-function makeViewObservable<T extends ViewBase>(instance: T, autoBind: boolean) {
-  const annotations: AnnotationsMap<T, never> = {} as AnnotationsMap<T, never>;
-
-  // Collect own properties (instance state) → observable
-  const ownKeys = new Set([
-    ...Object.keys(instance),
-    ...Object.keys(Object.getPrototypeOf(instance)),
-  ]);
-
-  for (const key of ownKeys) {
-    if (BASE_EXCLUDES.has(key)) continue;
-    if (key in annotations) continue;
-
-    const value = (instance as any)[key];
-
-    // Skip functions (these are handled in the prototype walk)
-    if (typeof value === 'function') continue;
-
-    // Skip behavior instances (they're already observable)
-    if (isBehavior(value)) {
-      (annotations as any)[key] = observable.ref;
-      continue;
-    }
-
-    (annotations as any)[key] = observable;
-  }
-
-  // Walk prototype chain up to (but not including) ViewBase
-  let proto = Object.getPrototypeOf(instance);
-  while (proto && proto !== ViewBase.prototype) {
-    const descriptors = Object.getOwnPropertyDescriptors(proto);
-
-    for (const [key, descriptor] of Object.entries(descriptors)) {
-      if (BASE_EXCLUDES.has(key)) continue;
-      if (key in annotations) continue;
-
-      if (descriptor.get) {
-        // Getter → computed
-        (annotations as any)[key] = computed;
-      } else if (typeof descriptor.value === 'function') {
-        // Method → action (optionally bound)
-        (annotations as any)[key] = autoBind ? action.bound : action;
-      }
-    }
-
-    proto = Object.getPrototypeOf(proto);
-  }
-
-  makeObservable(instance, annotations);
-}
-
-/**
- * Converts a props definition to Lit's static properties format.
- */
-function propsDefToLitProperties(propsDef: PropsDefinition): Record<string, any> {
-  const properties: Record<string, any> = {};
-  for (const [key, constructor] of Object.entries(propsDef)) {
-    // Extract the actual constructor (unwrap PropType)
-    const type = (constructor as any).__propType !== undefined 
-      ? Object // PropType<T> becomes Object for Lit
-      : constructor;
-    properties[key] = { type, attribute: false };
-  }
-  return properties;
-}
-
-type PropsOf<V> = V extends ViewBase<infer P> ? P : object;
 
 export interface CreateViewOptions {
   /** Custom element tag name (required, must contain a hyphen) */
@@ -395,19 +444,22 @@ export interface CreateViewOptions {
 }
 
 /**
- * Creates a Lit custom element from a View class.
+ * Registers a View class as a custom element.
  * 
- * @param ViewClass - The View class to wrap
+ * @param ViewClass - The View class to register
  * @param options - Configuration options including the tag name
- * @returns The custom element class (also registers it)
+ * @returns The View class (for chaining or type inference)
  * 
  * @example
  * ```ts
- * class CounterView extends View<{ initial: number }> {
+ * class CounterView extends View {
+ *   @property({ type: Number })
+ *   initial = 0;
+ * 
  *   count = 0;
  *   
  *   onCreate() {
- *     this.count = this.props.initial;
+ *     this.count = this.initial;
  *   }
  *   
  *   increment() {
@@ -424,205 +476,24 @@ export interface CreateViewOptions {
  * // Usage in HTML: <x-counter .initial=${5}></x-counter>
  * ```
  */
-export function createView<V extends ViewBase<any>>(
-  ViewClass: new () => V,
+export function createView<T extends typeof View>(
+  ViewClass: T,
   options: CreateViewOptions
-): typeof LitElement {
-  type P = PropsOf<V>;
+): T {
+  const { tag, autoObservable, shadow = true } = options;
 
-  const { tag, autoObservable = globalConfig.autoObservable, shadow = true } = options;
-
-  // Get props definition from the View class (if using View.props({ ... }) pattern)
-  // Walk up the prototype chain to find it since it's on the parent class
-  let propsDef: PropsDefinition | undefined;
-  let currentClass: any = ViewClass;
-  while (currentClass && !propsDef) {
-    propsDef = currentClass[PROPS_DEF];
-    currentClass = Object.getPrototypeOf(currentClass);
-  }
-
-  // Create the custom element class
-  class MantleElement extends LitElement {
-    private _vm: V | null = null;
-    private _mountCleanup?: () => void;
-    private _props: P = {} as P;
-
-    // Convert props definition to Lit properties for IDE autocomplete
-    static properties: Record<string, any> = propsDef 
-      ? propsDefToLitProperties(propsDef) 
-      : {};
-
-    // Pass through static styles from the View class
-    static styles = (ViewClass as any).styles;
-
-    constructor() {
-      super();
-    }
-
-    // Disable Shadow DOM if shadow: false
-    createRenderRoot() {
-      return shadow ? super.createRenderRoot() : this;
-    }
-
-    private _initViewModel() {
-      if (this._vm) return;
-
-      // Capture any properties set on the element before connection
-      // This handles imperative property setting: el.foo = value
-      // Check both own properties and Lit-defined properties
-      const propsToCapture = new Set([
-        ...Object.keys(this),
-        ...Object.keys(MantleElement.properties),
-      ]);
-      
-      for (const key of propsToCapture) {
-        if (key.startsWith('_')) continue;
-        const value = (this as any)[key];
-        if (value !== undefined) {
-          (this._props as any)[key] = value;
-        }
-      }
-
-      const instance = new ViewClass();
-
-      // Props is always reactive via observable.box
-      instance._propsBox = observable.box(this._props, { deep: false });
-
-      // Collect behavior instances from properties (must happen before makeObservable)
-      instance._collectBehaviors();
-
-      // Check for Mantle decorator annotations first
-      const decoratorAnnotations = getAnnotations(instance);
-
-      if (decoratorAnnotations) {
-        // Mantle decorators: use collected annotations
-        // Auto-bind all methods for stable `this` references
-        const annotations = { ...decoratorAnnotations };
-
-        // Walk prototype chain to auto-bind methods not explicitly decorated
-        let proto = Object.getPrototypeOf(instance);
-        while (proto && proto !== ViewBase.prototype) {
-          const descriptors = Object.getOwnPropertyDescriptors(proto);
-          for (const [key, descriptor] of Object.entries(descriptors)) {
-            if (BASE_EXCLUDES.has(key)) continue;
-            if (key in annotations) continue;
-            if (typeof descriptor.value === 'function') {
-              annotations[key] = action.bound;
-            }
-          }
-          proto = Object.getPrototypeOf(proto);
-        }
-
-        makeObservable(instance, annotations as AnnotationsMap<V, never>);
-      } else if (autoObservable) {
-        makeViewObservable(instance, true);
-      } else {
-        // For legacy decorator users: applies decorator metadata
-        makeObservable(instance);
-      }
-
-      // Set up the render callback
-      instance._requestRender = () => this.requestUpdate();
-
-      // Set up MobX reaction to trigger renders when observables change
-      instance._reactionDisposer = reaction(
-        () => instance.render?.(),
-        () => this.requestUpdate(),
-        { fireImmediately: false }
-      );
-
-      // Call onCreate
-      try {
-        instance.onCreate?.();
-      } catch (e) {
-        reportError(e, { phase: 'onCreate', name: ViewClass.name, isBehavior: false });
-      }
-
-      this._vm = instance;
-    }
-
-    connectedCallback() {
-      super.connectedCallback();
-      
-      this._initViewModel();
-      
-      if (this._vm) {
-        // Mount behaviors
-        this._vm._mountBehaviors();
-
-        // Call onMount
-        try {
-          const result = this._vm.onMount?.();
-          if (process.env.NODE_ENV !== 'production' && result instanceof Promise) {
-            console.error(
-              `[mantle-lit] ${ViewClass.name}.onMount() returned a Promise. ` +
-              `Lifecycle methods must be synchronous. Use a sync onMount that ` +
-              `calls an async method instead.`
-            );
-          }
-          this._mountCleanup = result as (() => void) | undefined;
-        } catch (e) {
-          reportError(e, { phase: 'onMount', name: ViewClass.name, isBehavior: false });
-        }
-      }
-    }
-
-    disconnectedCallback() {
-      super.disconnectedCallback();
-
-      if (this._vm) {
-        // Call mount cleanup
-        this._mountCleanup?.();
-
-        // Call onUnmount
-        try {
-          this._vm.onUnmount?.();
-        } catch (e) {
-          reportError(e, { phase: 'onUnmount', name: ViewClass.name, isBehavior: false });
-        }
-
-        // Dispose watchers
-        this._vm._disposeWatchers();
-
-        // Unmount behaviors
-        this._vm._unmountBehaviors();
-
-        // Dispose the render reaction
-        this._vm._reactionDisposer?.();
-      }
-    }
-
-    // Override to handle property updates
-    requestUpdate(name?: PropertyKey, oldValue?: unknown) {
-      if (name && this._vm) {
-        // Update the props when a property changes
-        (this._props as any)[name] = (this as any)[name];
-        this._vm._syncProps(this._props);
-      }
-      return super.requestUpdate(name, oldValue);
-    }
-
-    render() {
-      if (!this._vm) {
-        this._initViewModel();
-      }
-
-      if (!this._vm?.render) {
-        throw new Error(
-          `[mantle-lit] ${ViewClass.name}: Missing render() method.`
-        );
-      }
-
-      return this._vm.render();
-    }
-  }
+  // Store options on the class for use in connectedCallback
+  ViewClass._viewOptions = { 
+    autoObservable: autoObservable ?? globalConfig.autoObservable, 
+    shadow 
+  };
 
   // Register the custom element
   if (!customElements.get(tag)) {
-    customElements.define(tag, MantleElement);
+    customElements.define(tag, ViewClass);
   }
 
-  return MantleElement;
+  return ViewClass;
 }
 
 /**
@@ -656,6 +527,11 @@ export function mount<P extends object>(
   props?: P,
   container?: Element | string
 ): HTMLElement & P {
+  // Verify the element is registered
+  if (!customElements.get(tag)) {
+    throw new Error(`[mantle-lit] mount: custom element "${tag}" is not registered. Make sure to import the component file first.`);
+  }
+  
   const el = document.createElement(tag) as HTMLElement & P;
   
   if (props) {

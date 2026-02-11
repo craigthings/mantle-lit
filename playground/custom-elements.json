@@ -73,6 +73,129 @@
     },
     {
       "kind": "javascript-module",
+      "path": "playground/test-autocomplete.ts",
+      "declarations": [],
+      "exports": []
+    },
+    {
+      "kind": "javascript-module",
+      "path": "playground/test-decorator.ts",
+      "declarations": [
+        {
+          "kind": "class",
+          "description": "",
+          "name": "DecoratorTodo",
+          "members": [
+            {
+              "kind": "field",
+              "name": "title",
+              "type": {
+                "text": "string"
+              },
+              "default": "''"
+            },
+            {
+              "kind": "field",
+              "name": "initialTodos",
+              "type": {
+                "text": "TodoItem[]"
+              },
+              "default": "[]"
+            },
+            {
+              "kind": "field",
+              "name": "onCountChange",
+              "type": {
+                "text": "(count: number) => void | undefined"
+              }
+            },
+            {
+              "kind": "method",
+              "name": "render"
+            }
+          ],
+          "superclass": {
+            "name": "View",
+            "module": "/src"
+          },
+          "tagName": "x-decorator-todo",
+          "customElement": true
+        },
+        {
+          "kind": "variable",
+          "name": "DecoratorTodoEl"
+        }
+      ],
+      "exports": [
+        {
+          "kind": "js",
+          "name": "DecoratorTodoEl",
+          "declaration": {
+            "name": "DecoratorTodoEl",
+            "module": "playground/test-decorator.ts"
+          }
+        },
+        {
+          "kind": "custom-element-definition",
+          "name": "x-decorator-todo",
+          "declaration": {
+            "name": "DecoratorTodo",
+            "module": "playground/test-decorator.ts"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "javascript-module",
+      "path": "playground/test-lit-native.ts",
+      "declarations": [
+        {
+          "kind": "class",
+          "description": "",
+          "name": "NativeCounter",
+          "members": [
+            {
+              "kind": "field",
+              "name": "count",
+              "type": {
+                "text": "number"
+              },
+              "default": "0"
+            },
+            {
+              "kind": "field",
+              "name": "label",
+              "type": {
+                "text": "string"
+              },
+              "default": "''"
+            },
+            {
+              "kind": "method",
+              "name": "render"
+            }
+          ],
+          "superclass": {
+            "name": "LitElement",
+            "package": "lit"
+          },
+          "tagName": "native-counter",
+          "customElement": true
+        }
+      ],
+      "exports": [
+        {
+          "kind": "custom-element-definition",
+          "name": "native-counter",
+          "declaration": {
+            "name": "NativeCounter",
+            "module": "playground/test-lit-native.ts"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "javascript-module",
       "path": "playground/Todo.ts",
       "declarations": [
         {
@@ -85,6 +208,29 @@
               "name": "styles",
               "static": true,
               "default": "styles"
+            },
+            {
+              "kind": "field",
+              "name": "title",
+              "type": {
+                "text": "string"
+              },
+              "default": "''"
+            },
+            {
+              "kind": "field",
+              "name": "initialTodos",
+              "type": {
+                "text": "TodoItem[]"
+              },
+              "default": "[]"
+            },
+            {
+              "kind": "field",
+              "name": "onCountChange",
+              "type": {
+                "text": "(count: number) => void | undefined"
+              }
             },
             {
               "kind": "field",
@@ -182,40 +328,11 @@
             {
               "kind": "method",
               "name": "render"
-            },
-            {
-              "kind": "field",
-              "name": "title",
-              "type": {
-                "text": "string"
-              },
-              "attribute": "title"
-            },
-            {
-              "kind": "field",
-              "name": "initialTodos",
-              "type": {
-                "text": "PropType<TodoItem[]>"
-              },
-              "attribute": "initialTodos"
-            },
-            {
-              "kind": "field",
-              "name": "onCountChange",
-              "type": {
-                "text": "PropType<(count: number) => void>"
-              },
-              "attribute": "onCountChange"
-            }
-          ],
-          "mixins": [
-            {
-              "name": "View.props",
-              "module": "playground/Todo.ts"
             }
           ],
           "superclass": {
-            "module": "/playground/Counter"
+            "name": "View",
+            "module": "/src"
           },
           "tagName": "x-todo",
           "customElement": true

@@ -61,3 +61,10 @@ class CounterView extends View {
 }
 
 export const Counter = createView(CounterView, { tag: 'x-counter' });
+
+// Declare on HTMLElementTagNameMap for lit-plugin type checking
+declare global {
+  interface HTMLElementTagNameMap {
+    'x-counter': CounterView;
+  }
+}

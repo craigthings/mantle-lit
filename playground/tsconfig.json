@@ -9,13 +9,12 @@
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "noEmit": true,
+    "experimentalDecorators": true,
+    "useDefineForClassFields": false,
     "plugins": [
       {
         "name": "ts-lit-plugin",
-        "rules": {
-          "no-unknown-tag-name": "warning",
-          "no-unknown-attribute": "warning"
-        }
+        "strict": true
       }
     ]
   },
