@@ -1,6 +1,4 @@
-import { View, createView } from '../src';
-import { html, css } from 'lit';
-import { property } from 'lit/decorators.js';
+import { View, createView, property, html, css } from '../src';
 
 // ─── HMR Test ───
 // 1. Add todos in the parent Todo component
@@ -46,7 +44,7 @@ class CounterView extends View {
   `;
 
   // Props
-  @property({ type: Number, attribute: false })
+  @property()
   initialCount = 0;
 
   // Internal state

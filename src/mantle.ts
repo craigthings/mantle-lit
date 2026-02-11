@@ -1,6 +1,5 @@
-import { LitElement, type TemplateResult, type CSSResultGroup } from 'lit';
-import { property } from 'lit/decorators.js';
-import { makeObservable, observable, computed, action, reaction, runInAction, type AnnotationsMap } from 'mobx';
+import { html, render, type TemplateResult } from 'lit-html';
+import { makeObservable, observable, computed, action, reaction, runInAction, autorun, type AnnotationsMap } from 'mobx';
 import {
   type BehaviorEntry,
   isBehavior,
@@ -19,31 +18,109 @@ export { observable, action, computed } from './decorators';
 // Re-export from behavior module
 export { createBehavior, Behavior } from './behavior';
 
-// Re-export Lit's property decorator for convenience
-export { property } from 'lit/decorators.js';
+// Re-export lit-html for convenience
+export { html, svg, nothing } from 'lit-html';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Props Type System
+// Property Decorator (Lit-compatible signature for tooling)
 // ─────────────────────────────────────────────────────────────────────────────
+
+/** Symbol to store property metadata on the class */
+const PROPERTIES = Symbol('mantle:properties');
 
 /**
- * Type helper for complex prop types (arrays, functions, objects).
- * Use with `as PropType<T>` to specify the exact TypeScript type.
+ * Property declaration options (matches Lit's PropertyDeclaration interface)
+ */
+export interface PropertyDeclaration<Type = unknown, TypeHint = unknown> {
+  /** When true, property is internal state (not a public prop) */
+  readonly state?: boolean;
+  /** Attribute handling: false = no attribute, true = lowercase name, string = custom name */
+  readonly attribute?: boolean | string;
+  /** Type hint for converters */
+  readonly type?: TypeHint;
+  /** Whether to reflect property to attribute */
+  readonly reflect?: boolean;
+  /** Custom change detection */
+  hasChanged?(value: Type, oldValue: Type): boolean;
+  /** Skip accessor generation */
+  readonly noAccessor?: boolean;
+}
+
+/**
+ * Property decorator that marks a field as a prop.
+ * Compatible with Lit's @property() signature for IDE tooling (lit-analyzer).
+ * 
+ * At runtime, this stores metadata and creates prototype accessors.
+ * MobX handles all reactivity.
  * 
  * @example
  * ```ts
  * class TodoView extends View {
- *   @property({ type: Array })
- *   items: PropType<TodoItem[]>;
+ *   @property() title = '';
+ *   @property() items: TodoItem[] = [];
  * }
  * ```
  */
-export interface PropType<T> {
-  // Marker for type inference (not used at runtime)
-  readonly __propType?: T;
-  // Allow it to be assigned from constructors
-  (...args: any[]): any;
+export function property(options?: PropertyDeclaration): PropertyDecorator {
+  return function(target: any, propertyKey: string | symbol, descriptor?: PropertyDescriptor): any {
+    // Get or create the properties map on the class
+    const ctor = target.constructor ?? target;
+    if (!ctor[PROPERTIES]) {
+      ctor[PROPERTIES] = new Map<string | symbol, PropertyDeclaration>();
+    }
+    ctor[PROPERTIES].set(propertyKey, options ?? {});
+    
+    // Return undefined to let the field initializer work normally
+    return descriptor;
+  } as PropertyDecorator;
 }
+
+/** Get property declarations for a class */
+function getPropertyDeclarations(ctor: any): Map<string | symbol, PropertyDeclaration> {
+  return ctor[PROPERTIES] ?? new Map();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CSS Support
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Tagged template for CSS (creates a CSSStyleSheet or style string)
+ */
+export function css(strings: TemplateStringsArray, ...values: any[]): CSSResult {
+  const cssText = strings.reduce((acc, str, i) => {
+    const value = values[i];
+    if (value instanceof CSSResult) {
+      return acc + str + value.cssText;
+    }
+    return acc + str + (value ?? '');
+  }, '');
+  return new CSSResult(cssText);
+}
+
+/** Wrapper for CSS text that can be used with adoptedStyleSheets */
+export class CSSResult {
+  readonly cssText: string;
+  private _styleSheet?: CSSStyleSheet;
+
+  constructor(cssText: string) {
+    this.cssText = cssText;
+  }
+
+  get styleSheet(): CSSStyleSheet {
+    if (!this._styleSheet) {
+      this._styleSheet = new CSSStyleSheet();
+      this._styleSheet.replaceSync(this.cssText);
+    }
+    return this._styleSheet;
+  }
+}
+
+export type CSSResultGroup = CSSResult | CSSResult[];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// View Base Class
+// ─────────────────────────────────────────────────────────────────────────────
 
 // Base class members that should not be made observable
 const BASE_EXCLUDES = new Set([
@@ -59,51 +136,39 @@ const BASE_EXCLUDES = new Set([
   '_unmountBehaviors',
   '_watchDisposers',
   '_disposeWatchers',
-  '_reactionDisposer',
+  '_renderDisposer',
   '_mountCleanup',
   '_initialized',
-  // LitElement internals
+  '_renderRoot',
+  // HTMLElement internals
   'connectedCallback',
   'disconnectedCallback',
   'attributeChangedCallback',
-  'requestUpdate',
-  'performUpdate',
-  'shouldUpdate',
-  'willUpdate',
-  'update',
-  'firstUpdated',
-  'updated',
-  'createRenderRoot',
-  'renderRoot',
-  'isUpdatePending',
-  'hasUpdated',
-  'updateComplete',
-  'getUpdateComplete',
-  'enableUpdating',
-  'addController',
-  'removeController',
-  'scheduleUpdate',
+  'adoptedCallback',
 ]);
 
 /**
- * Base class for Views. Extends LitElement directly.
+ * Base class for Views. Extends HTMLElement with MobX reactivity and lit-html rendering.
  * 
- * Use Lit's @property() decorator to define props that will be
- * recognized by IDE tooling and web-component-analyzer.
+ * Use @property() decorator to define props for IDE tooling.
+ * All fields are automatically MobX observable.
  * 
  * @example
  * ```ts
- * import { View, createView, property } from 'mantle-lit';
- * import { html } from 'lit';
+ * import { View, createView, property, html, css } from 'mantle-lit';
  * 
  * class CounterView extends View {
- *   @property({ type: Number })
- *   initial = 0;
+ *   static styles = css`
+ *     button { background: #6366f1; color: white; }
+ *   `;
+ * 
+ *   @property({ attribute: false })
+ *   initialCount = 0;
  * 
  *   count = 0;
  * 
  *   onCreate() {
- *     this.count = this.initial;
+ *     this.count = this.initialCount;
  *   }
  * 
  *   increment() {
@@ -122,24 +187,30 @@ const BASE_EXCLUDES = new Set([
  * export const Counter = createView(CounterView, { tag: 'x-counter' });
  * ```
  */
-export class View extends LitElement {
-  /** @internal */
-  private _behaviors: BehaviorEntry[] = [];
+export class View extends HTMLElement {
+  /** Static styles for the component (applied to shadow DOM) */
+  static styles?: CSSResultGroup;
+
+  /** @internal - Options passed from createView */
+  static _viewOptions?: { autoObservable: boolean; shadow: boolean };
 
   /** @internal */
-  private _watchDisposers: (() => void)[] = [];
+  private _behaviors?: BehaviorEntry[];
 
-  /** @internal - MobX reaction disposer for auto-render */
-  private _reactionDisposer?: () => void;
+  /** @internal */
+  private _watchDisposers?: (() => void)[];
+
+  /** @internal - MobX autorun disposer for rendering */
+  private _renderDisposer?: () => void;
 
   /** @internal - Cleanup function from onMount */
   private _mountCleanup?: () => void;
 
   /** @internal - Track if we've initialized MobX */
-  private _initialized = false;
+  private _initialized?: boolean;
 
-  /** @internal - Options passed from createView */
-  static _viewOptions?: { autoObservable: boolean; shadow: boolean };
+  /** @internal - The render target (shadow root or element itself) */
+  private _renderRoot?: HTMLElement | ShadowRoot;
 
   /**
    * Called when the component is created, before first render.
@@ -161,32 +232,14 @@ export class View extends LitElement {
   /**
    * Watch a reactive expression and run a callback when it changes.
    * Automatically disposed on unmount.
-   * 
-   * @param expr - Reactive expression (getter) to watch
-   * @param callback - Called when the expression result changes
-   * @param options - Optional configuration (delay, fireImmediately)
-   * @returns Dispose function for early teardown
-   * 
-   * @example
-   * ```ts
-   * onCreate() {
-   *   this.watch(
-   *     () => this.query,
-   *     async (query) => {
-   *       if (query.length > 2) {
-   *         this.results = await searchApi(query);
-   *       }
-   *     },
-   *     { delay: 300 }
-   *   );
-   * }
-   * ```
    */
   watch<T>(
     expr: () => T,
     callback: (value: T, prevValue: T | undefined) => void,
     options?: WatchOptions
   ): () => void {
+    if (!this._watchDisposers) this._watchDisposers = [];
+    
     const dispose = reaction(
       expr,
       (value, prevValue) => {
@@ -204,24 +257,25 @@ export class View extends LitElement {
 
     this._watchDisposers.push(dispose);
 
-    // Return a dispose function that also removes from the array
     return () => {
       dispose();
-      const idx = this._watchDisposers.indexOf(dispose);
-      if (idx !== -1) this._watchDisposers.splice(idx, 1);
+      const idx = this._watchDisposers!.indexOf(dispose);
+      if (idx !== -1) this._watchDisposers!.splice(idx, 1);
     };
   }
 
   /** @internal */
   private _disposeWatchers(): void {
+    if (!this._watchDisposers) return;
     for (const dispose of this._watchDisposers) {
       dispose();
     }
     this._watchDisposers.length = 0;
   }
 
-  /** @internal - Scan own properties for behavior instances and register them */
+  /** @internal - Scan own properties for behavior instances */
   private _collectBehaviors(): void {
+    if (!this._behaviors) this._behaviors = [];
     for (const key of Object.keys(this)) {
       if (key.startsWith('_')) continue;
       const value = (this as any)[key];
@@ -233,6 +287,7 @@ export class View extends LitElement {
 
   /** @internal */
   private _mountBehaviors(): void {
+    if (!this._behaviors) return;
     for (const behavior of this._behaviors) {
       mountBehavior(behavior);
     }
@@ -240,6 +295,7 @@ export class View extends LitElement {
 
   /** @internal */
   private _unmountBehaviors(): void {
+    if (!this._behaviors) return;
     for (const behavior of this._behaviors) {
       unmountBehavior(behavior);
     }
@@ -253,6 +309,10 @@ export class View extends LitElement {
     const ViewClass = this.constructor as typeof View;
     const options = ViewClass._viewOptions ?? { autoObservable: globalConfig.autoObservable, shadow: true };
 
+    // Make @property() storage observable
+    // This enables watch() and reactive rendering for props
+    this._makePropsObservable();
+
     // Collect behavior instances from properties (must happen before makeObservable)
     this._collectBehaviors();
 
@@ -261,12 +321,11 @@ export class View extends LitElement {
 
     if (decoratorAnnotations) {
       // Mantle decorators: use collected annotations
-      // Auto-bind all methods for stable `this` references
       const annotations = { ...decoratorAnnotations };
 
       // Walk prototype chain to auto-bind methods not explicitly decorated
       let proto = Object.getPrototypeOf(this);
-      while (proto && proto !== View.prototype && proto !== LitElement.prototype) {
+      while (proto && proto !== View.prototype && proto !== HTMLElement.prototype) {
         const descriptors = Object.getOwnPropertyDescriptors(proto);
         for (const [key, descriptor] of Object.entries(descriptors)) {
           if (BASE_EXCLUDES.has(key)) continue;
@@ -280,33 +339,32 @@ export class View extends LitElement {
 
       makeObservable(this, annotations as AnnotationsMap<this, never>);
     } else if (options.autoObservable) {
-      this._makeViewObservable();
+      this._makeAutoObservable();
     } else {
       // For legacy decorator users: applies decorator metadata
       makeObservable(this);
     }
-
-    // Set up MobX reaction to trigger renders when observables change
-    this._reactionDisposer = reaction(
-      () => this.render(),
-      () => this.requestUpdate(),
-      { fireImmediately: false }
-    );
   }
 
-  /** @internal - Make all properties observable */
-  private _makeViewObservable(): void {
+  /** @internal - Make @property() storage observable */
+  private _makePropsObservable(): void {
+    const storage = (this as any)[PROP_VALUES];
+    if (!storage) return;
+    
+    // Convert plain object to MobX observable, preserving existing values
+    const observableStorage = observable.object(storage, {}, { deep: true });
+    (this as any)[PROP_VALUES] = observableStorage;
+    (this as any)[PROP_VALUES_OBSERVABLE] = true;
+  }
+
+  /** @internal - Make all properties observable automatically */
+  private _makeAutoObservable(): void {
     const annotations: AnnotationsMap<this, never> = {} as AnnotationsMap<this, never>;
 
-    // Get the list of Lit-managed properties (from @property decorator or static properties)
-    // Lit stores decorated properties in elementProperties (a Map with PropertyKey keys)
-    const ctor = this.constructor as typeof LitElement & { elementProperties?: Map<PropertyKey, unknown> };
-    const litProperties = new Set<string | symbol>([
-      ...Object.keys((ctor as any).properties ?? {}),
-      ...(ctor.elementProperties ? Array.from(ctor.elementProperties.keys()).filter((k): k is string | symbol => typeof k !== 'number') : []),
-    ]);
+    // Get declared @property() fields - these have prototype accessors, skip them
+    const declaredProps = getPropertyDeclarations(this.constructor);
 
-    // Collect own properties (instance state) → observable
+    // Collect own properties → observable
     const ownKeys = new Set([
       ...Object.keys(this),
       ...Object.keys(Object.getPrototypeOf(this)),
@@ -316,12 +374,12 @@ export class View extends LitElement {
       if (BASE_EXCLUDES.has(key)) continue;
       if (key.startsWith('_')) continue;
       if (key in annotations) continue;
-      // Skip Lit-managed properties - they have their own reactivity
-      if (litProperties.has(key)) continue;
+      // Skip @property() fields - they have prototype accessors
+      if (declaredProps.has(key)) continue;
 
       const value = (this as any)[key];
 
-      // Skip functions (these are handled in the prototype walk)
+      // Skip functions (handled in prototype walk)
       if (typeof value === 'function') continue;
 
       // Skip behavior instances (they're already observable)
@@ -335,15 +393,15 @@ export class View extends LitElement {
 
     // Walk prototype chain up to (but not including) View
     let proto = Object.getPrototypeOf(this);
-    while (proto && proto !== View.prototype && proto !== LitElement.prototype) {
+    while (proto && proto !== View.prototype && proto !== HTMLElement.prototype) {
       const descriptors = Object.getOwnPropertyDescriptors(proto);
 
       for (const [key, descriptor] of Object.entries(descriptors)) {
         if (BASE_EXCLUDES.has(key)) continue;
         if (key.startsWith('_')) continue;
         if (key in annotations) continue;
-        // Skip Lit-managed properties - they create getters/setters on prototype
-        if (litProperties.has(key)) continue;
+        // Skip @property() fields - they have prototype accessors
+        if (declaredProps.has(key)) continue;
 
         if (descriptor.get) {
           // Getter → computed
@@ -360,28 +418,48 @@ export class View extends LitElement {
     makeObservable(this, annotations);
   }
 
-  // Override createRenderRoot to support shadow: false
-  createRenderRoot(): HTMLElement | DocumentFragment {
+  /** @internal - Create render root (shadow or light DOM) */
+  private _createRenderRoot(): HTMLElement | ShadowRoot {
     const ViewClass = this.constructor as typeof View;
     const options = ViewClass._viewOptions;
+    
     if (options && !options.shadow) {
       return this;
     }
-    return super.createRenderRoot();
+    
+    const shadowRoot = this.attachShadow({ mode: 'open' });
+    
+    // Apply styles if defined
+    const styles = ViewClass.styles;
+    if (styles) {
+      const styleArray = Array.isArray(styles) ? styles : [styles];
+      shadowRoot.adoptedStyleSheets = styleArray.map(s => s.styleSheet);
+    }
+    
+    return shadowRoot;
   }
 
   connectedCallback(): void {
-    // Initialize MobX before super.connectedCallback() triggers first render
+    // Create render root
+    this._renderRoot = this._createRenderRoot();
+
+    // Initialize MobX
     this._initMobX();
 
-    // Call onCreate before first render (wrapped in action for MobX strict mode)
+    // Call onCreate before first render
     try {
       runInAction(() => this.onCreate?.());
     } catch (e) {
       reportError(e, { phase: 'onCreate', name: this.constructor.name, isBehavior: false });
     }
 
-    super.connectedCallback();
+    // Set up autorun for reactive rendering
+    this._renderDisposer = autorun(() => {
+      const template = this.render();
+      if (template && this._renderRoot) {
+        render(template, this._renderRoot);
+      }
+    });
 
     // Mount behaviors
     this._mountBehaviors();
@@ -403,7 +481,8 @@ export class View extends LitElement {
   }
 
   disconnectedCallback(): void {
-    super.disconnectedCallback();
+    // Dispose render autorun
+    this._renderDisposer?.();
 
     // Call mount cleanup
     this._mountCleanup?.();
@@ -420,9 +499,6 @@ export class View extends LitElement {
 
     // Unmount behaviors
     this._unmountBehaviors();
-
-    // Dispose the render reaction
-    this._reactionDisposer?.();
   }
 
   // Subclasses must implement render
@@ -434,6 +510,10 @@ export class View extends LitElement {
 /** Alias for View - use when separating ViewModel from template */
 export const ViewModel = View;
 
+// ─────────────────────────────────────────────────────────────────────────────
+// createView and mount helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
 export interface CreateViewOptions {
   /** Custom element tag name (required, must contain a hyphen) */
   tag: string;
@@ -443,38 +523,16 @@ export interface CreateViewOptions {
   shadow?: boolean;
 }
 
+/** Symbol for storing property values on instances */
+const PROP_VALUES = Symbol('mantle:propValues');
+
+/** Symbol to track if prop storage has been made observable */
+const PROP_VALUES_OBSERVABLE = Symbol('mantle:propValuesObservable');
+
 /**
  * Registers a View class as a custom element.
- * 
- * @param ViewClass - The View class to register
- * @param options - Configuration options including the tag name
- * @returns The View class (for chaining or type inference)
- * 
- * @example
- * ```ts
- * class CounterView extends View {
- *   @property({ type: Number })
- *   initial = 0;
- * 
- *   count = 0;
- *   
- *   onCreate() {
- *     this.count = this.initial;
- *   }
- *   
- *   increment() {
- *     this.count++;
- *   }
- *   
- *   render() {
- *     return html`<button @click=${this.increment}>Count: ${this.count}</button>`;
- *   }
- * }
- * 
- * export const Counter = createView(CounterView, { tag: 'x-counter' });
- * 
- * // Usage in HTML: <x-counter .initial=${5}></x-counter>
- * ```
+ * Creates prototype accessors for @property() fields to prevent
+ * class field initializers from setting native HTMLElement properties.
  */
 export function createView<T extends typeof View>(
   ViewClass: T,
@@ -482,11 +540,51 @@ export function createView<T extends typeof View>(
 ): T {
   const { tag, autoObservable, shadow = true } = options;
 
-  // Store options on the class for use in connectedCallback
+  // Store options on the class
   ViewClass._viewOptions = { 
     autoObservable: autoObservable ?? globalConfig.autoObservable, 
     shadow 
   };
+
+  // Get declared properties from @property() decorator
+  const declaredProps = getPropertyDeclarations(ViewClass);
+  
+  // Create prototype accessors for each declared property
+  // This intercepts class field initializers before they hit native HTMLElement properties
+  // Values are stored in a MobX observable object for reactivity
+  for (const [key] of declaredProps) {
+    if (typeof key !== 'string') continue;
+    
+    Object.defineProperty(ViewClass.prototype, key, {
+      get() {
+        const values = (this as any)[PROP_VALUES];
+        return values ? values[key] : undefined;
+      },
+      set(value) {
+        // Lazily create observable storage on first write
+        if (!(this as any)[PROP_VALUES]) {
+          (this as any)[PROP_VALUES] = {};
+        }
+        
+        // Make storage observable once MobX is initialized
+        // Before that, just store values normally (they'll be picked up later)
+        const storage = (this as any)[PROP_VALUES];
+        const isObservable = (this as any)[PROP_VALUES_OBSERVABLE];
+        
+        if (isObservable) {
+          // Storage is already observable, use runInAction for MobX
+          runInAction(() => {
+            storage[key] = value;
+          });
+        } else {
+          // Not yet observable, just store
+          storage[key] = value;
+        }
+      },
+      enumerable: true,
+      configurable: true,
+    });
+  }
 
   // Register the custom element
   if (!customElements.get(tag)) {
@@ -497,37 +595,13 @@ export function createView<T extends typeof View>(
 }
 
 /**
- * Helper type for defining props that will be passed as properties (not attributes).
- * Use with .prop=${value} syntax in Lit templates.
- */
-export type Props<T> = T;
-
-/**
  * Mount a view to the DOM with props.
- * 
- * @param tag - The custom element tag name
- * @param props - Props to pass to the component
- * @param container - DOM element or selector to mount into (default: document.body)
- * @returns The created element
- * 
- * @example
- * ```ts
- * import { mount } from 'mantle-lit';
- * import './Todo'; // registers x-todo
- * 
- * mount('x-todo', {
- *   title: 'My Tasks',
- *   initialTodos: [{ id: 1, text: 'Learn mantle', done: false }],
- *   onCountChange: (count) => console.log(count)
- * });
- * ```
  */
 export function mount<P extends object>(
   tag: string,
   props?: P,
   container?: Element | string
 ): HTMLElement & P {
-  // Verify the element is registered
   if (!customElements.get(tag)) {
     throw new Error(`[mantle-lit] mount: custom element "${tag}" is not registered. Make sure to import the component file first.`);
   }
@@ -548,4 +622,21 @@ export function mount<P extends object>(
   
   target.appendChild(el);
   return el;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Type Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Helper type for defining props that will be passed as properties.
+ */
+export type Props<T> = T;
+
+/**
+ * Type helper for complex prop types.
+ */
+export interface PropType<T> {
+  readonly __propType?: T;
+  (...args: any[]): any;
 }

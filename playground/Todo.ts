@@ -1,14 +1,9 @@
-import { View, createView, property } from '../src';
-import { html } from 'lit';
+import { View, createView, property, html } from '../src';
+import { ref, createRef, type Ref } from 'lit-html/directives/ref.js';
 import { withWindowSize } from './withWindowSize';
 import { styles } from './Todo.styles';
 import './Counter';
 
-// ─── HMR Test ───
-// To test child edit doesn't affect parent:
-// 1. Add a todo here, click the counter below a few times
-// 2. Edit Counter.ts (change its HRM_VERSION) and save
-// 3. Verify: Counter resets, but todos SURVIVE (parent unaffected) ✓
 const HRM_VERSION = 'v1';
 
 interface TodoItem {
@@ -20,23 +15,15 @@ interface TodoItem {
 class TodoView extends View {
   static styles = styles;
 
-  // Props - use @property for IDE autocomplete
-  // attribute: false prevents reflection to HTML attributes
-  @property({ type: String, attribute: false })
-  title = '';
+  // Props
+  @property() title = '';
+  @property() initialTodos: TodoItem[] = [];
+  @property() onCountChange?: (count: number) => void;
 
-  @property({ type: Array, attribute: false })
-  initialTodos: TodoItem[] = [];
-
-  @property({ attribute: false })
-  onCountChange: ((count: number) => void) | undefined = undefined;
-
-  // Internal state (auto-observable)
+  // Internal state
   todos: TodoItem[] = [];
   input = '';
-  inputEl: HTMLInputElement | null = null;
-  
-  // Factory function (no `new`) — View auto-detects behaviors
+  inputRef: Ref<HTMLInputElement> = createRef();
   windowSize = withWindowSize(768);
 
   get completedCount() {
@@ -45,8 +32,6 @@ class TodoView extends View {
 
   onCreate() {
     this.todos = this.initialTodos ?? [];
-
-    // Watch completedCount and notify parent — auto-disposed on unmount
     this.watch(
       () => this.completedCount,
       (count) => this.onCountChange?.(count)
@@ -54,7 +39,7 @@ class TodoView extends View {
   }
 
   onMount() {
-    this.inputEl?.focus();
+    this.inputRef.value?.focus();
   }
 
   add() {
@@ -79,10 +64,6 @@ class TodoView extends View {
     if (todo) todo.done = !todo.done;
   }
 
-  captureInput(el: Element | undefined) {
-    this.inputEl = el as HTMLInputElement | null;
-  }
-
   render() {
     return html`
       <div class="header">
@@ -91,7 +72,7 @@ class TodoView extends View {
       </div>
       <form @submit=${(e: Event) => { e.preventDefault(); this.add(); }}>
         <input
-          ${this.captureInput}
+          ${ref(this.inputRef)}
           .value=${this.input}
           @input=${this.setInput}
           @keydown=${this.handleKeydown}
@@ -122,7 +103,6 @@ class TodoView extends View {
 
 export const Todo = createView(TodoView, { tag: 'x-todo' });
 
-// Declare on HTMLElementTagNameMap for lit-plugin type checking
 declare global {
   interface HTMLElementTagNameMap {
     'x-todo': TodoView;

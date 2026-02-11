@@ -11,13 +11,20 @@ export {
   // Helpers
   mount,
   
-  // Decorators (for explicit annotation mode)
+  // Decorators
   observable,
   action,
   computed,
-  
-  // Lit's property decorator (re-exported for convenience)
   property,
+  
+  // CSS helper
+  css,
+  CSSResult,
+  
+  // lit-html re-exports
+  html,
+  svg,
+  nothing,
   
   // Config
   configure,
@@ -25,6 +32,8 @@ export {
   // Types
   type Props,
   type PropType,
+  type PropertyDeclaration,
+  type CSSResultGroup,
   type CreateViewOptions,
 } from './mantle';
 

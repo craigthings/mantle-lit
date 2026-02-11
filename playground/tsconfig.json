@@ -10,11 +10,14 @@
     "allowSyntheticDefaultImports": true,
     "noEmit": true,
     "experimentalDecorators": true,
-    "useDefineForClassFields": false,
+    "useDefineForClassFields": true,
     "plugins": [
       {
         "name": "ts-lit-plugin",
-        "strict": true
+        "strict": true,
+        "rules": {
+          "no-incompatible-property-type": "off"
+        }
       }
     ]
   },

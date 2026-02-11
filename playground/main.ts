@@ -12,7 +12,7 @@ document.body.appendChild(app);
 mount('x-todo', {
   title: 'My Tasks',
   initialTodos: [
-    { id: 1, text: 'Learn mobx-mantle', done: false },
+    { id: 1, text: 'Learn mantle-lit', done: false },
     { id: 2, text: 'Build something great', done: false },
   ],
   onCountChange: (count: number) => console.log(`Completed: ${count}`),

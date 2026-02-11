@@ -1,6 +1,6 @@
 # Mantle Lit
 
-A lightweight library for building Lit web components with MobX reactivity. Extends LitElement with automatic observable state, computed getters, and bound actions.
+A lightweight library for building web components with MobX reactivity and lit-html templating. Automatic observable state, computed getters, and bound actions.
 
 ## Installation
 
@@ -13,14 +13,12 @@ Requires Lit 3+ and MobX 6+.
 ## Basic Example
 
 ```ts
-import { View, createView } from 'mantle-lit';
+import { View, createView, property } from 'mantle-lit';
 import { html } from 'lit';
-import { property } from 'lit/decorators.js';
 
 class CounterView extends View {
-  // Props - use @property for Lit reactivity and IDE autocomplete
-  @property({ type: Number, attribute: false })
-  initialCount = 0;
+  // Props
+  @property() initialCount = 0;
 
   // Internal state - auto-observable
   count = 0;
@@ -57,16 +55,15 @@ declare global {
 <x-counter .initialCount=${5}></x-counter>
 ```
 
-**Everything is reactive by default.** Internal state becomes observable, getters become computed, and methods become auto-bound actions. Props use Lit's standard `@property()` decorator.
+**Everything is reactive by default.** Internal state becomes observable, getters become computed, and methods become auto-bound actions. Props use the `@property()` decorator for IDE autocomplete.
 
 ## Defining Props
 
-Use Lit's `@property()` decorator for props. Use `attribute: false` since we pass complex data via property binding:
+Use `@property()` for props:
 
 ```ts
-import { View, createView } from 'mantle-lit';
+import { View, createView, property } from 'mantle-lit';
 import { html } from 'lit';
-import { property } from 'lit/decorators.js';
 
 interface TodoItem {
   id: number;
@@ -75,14 +72,9 @@ interface TodoItem {
 }
 
 class TodoView extends View {
-  @property({ type: String, attribute: false })
-  title = '';
-
-  @property({ type: Array, attribute: false })
-  initialTodos: TodoItem[] = [];
-
-  @property({ attribute: false })
-  onComplete?: (count: number) => void;
+  @property() title = '';
+  @property() initialTodos: TodoItem[] = [];
+  @property() onComplete?: (count: number) => void;
 
   // Internal state (auto-observable, no decorator needed)
   todos: TodoItem[] = [];
@@ -97,7 +89,7 @@ declare global {
 }
 ```
 
-**Why `attribute: false`?** We use property binding (`.prop=${value}`) to pass complex objects, arrays, and functions. Attribute reflection isn't needed and can cause issues with non-primitive types.
+Use property binding (`.prop=${value}`) to pass props in templates.
 
 **No props?** Just extend `View` directly without any `@property()` decorators.
 
@@ -213,8 +205,7 @@ this.watch(
 
 ```ts
 class SearchView extends View {
-  @property({ type: String, attribute: false })
-  placeholder = '';
+  @property() placeholder = '';
 
   query = '';
   results: string[] = [];
@@ -305,13 +296,12 @@ Add to your `package.json`:
 
 ## TypeScript Configuration
 
-For `@property()` decorators to work correctly:
+Enable experimental decorators:
 
 ```json
 {
   "compilerOptions": {
-    "experimentalDecorators": true,
-    "useDefineForClassFields": false
+    "experimentalDecorators": true
   }
 }
 ```
@@ -323,9 +313,8 @@ For `@property()` decorators to work correctly:
 State, logic, and template in one class:
 
 ```ts
-import { View, createView } from 'mantle-lit';
+import { View, createView, property } from 'mantle-lit';
 import { html } from 'lit';
-import { property } from 'lit/decorators.js';
 
 interface TodoItem {
   id: number;
@@ -334,8 +323,7 @@ interface TodoItem {
 }
 
 class TodoView extends View {
-  @property({ type: Array, attribute: false })
-  initialTodos: TodoItem[] = [];
+  @property() initialTodos: TodoItem[] = [];
 
   todos: TodoItem[] = [];
   input = '';
@@ -418,13 +406,11 @@ export const Todo = createView(TodoView, { tag: 'x-todo' });
 For teams that prefer explicit annotations over auto-observable, Mantle provides its own decorators. These are lightweight metadata collectors. No `accessor` keyword required.
 
 ```ts
-import { View, createView, observable, action, computed } from 'mantle-lit';
+import { View, createView, property, observable, action, computed } from 'mantle-lit';
 import { html } from 'lit';
-import { property } from 'lit/decorators.js';
 
 class TodoView extends View {
-  @property({ type: String, attribute: false })
-  title = '';
+  @property() title = '';
 
   @observable todos: TodoItem[] = [];
   @observable input = '';
@@ -656,7 +642,7 @@ configure({ autoObservable: false });
 
 ### `View`
 
-Base class for view components. Extends `LitElement` with MobX integration.
+Base class for view components. Extends `HTMLElement` with MobX integration and lit-html rendering.
 
 | Property/Method | Description |
 |-----------------|-------------|
