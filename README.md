@@ -591,6 +591,7 @@ createView(MyView, { tag: 'x-my-view', autoObservable: false })
 |--------|---------|-------------|
 | `tag` | (required) | Custom element tag name (must contain a hyphen) |
 | `autoObservable` | `true` | Make all fields observable. Set to `false` when using decorators. |
+| `shadow` | `true` | Use Shadow DOM. Set to `false` to render in light DOM (allows external CSS). |
 
 ## Who This Is For
 

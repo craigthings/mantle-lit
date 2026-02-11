@@ -256,6 +256,8 @@ export interface CreateViewOptions {
   tag: string;
   /** Whether to automatically make View instances observable (default: true) */
   autoObservable?: boolean;
+  /** Whether to use Shadow DOM (default: true). Set to false to render in light DOM. */
+  shadow?: boolean;
 }
 
 /**
@@ -294,7 +296,7 @@ export function createView<V extends View<any>>(
 ): typeof LitElement {
   type P = PropsOf<V>;
 
-  const { tag, autoObservable = globalConfig.autoObservable } = options;
+  const { tag, autoObservable = globalConfig.autoObservable, shadow = true } = options;
 
   // Create the custom element class
   class MantleElement extends LitElement {
@@ -305,12 +307,27 @@ export function createView<V extends View<any>>(
     // Lit will call this when any property changes
     static properties: Record<string, any> = {};
 
+    // Pass through static styles from the View class
+    static styles = (ViewClass as any).styles;
+
     constructor() {
       super();
     }
 
+    // Disable Shadow DOM if shadow: false
+    createRenderRoot() {
+      return shadow ? super.createRenderRoot() : this;
+    }
+
     private _initViewModel() {
       if (this._vm) return;
+
+      // Capture any properties set on the element before connection
+      // This handles imperative property setting: el.foo = value
+      for (const key of Object.keys(this)) {
+        if (key.startsWith('_')) continue;
+        (this._props as any)[key] = (this as any)[key];
+      }
 
       const instance = new ViewClass();
 
@@ -459,3 +476,46 @@ export function createView<V extends View<any>>(
  * Use with .prop=${value} syntax in Lit templates.
  */
 export type Props<T> = T;
+
+/**
+ * Mount a view to the DOM with props.
+ * 
+ * @param tag - The custom element tag name
+ * @param props - Props to pass to the component
+ * @param container - DOM element or selector to mount into (default: document.body)
+ * @returns The created element
+ * 
+ * @example
+ * ```ts
+ * import { mount } from '@mantle/lit';
+ * import './Todo'; // registers x-todo
+ * 
+ * mount('x-todo', {
+ *   title: 'My Tasks',
+ *   initialTodos: [{ id: 1, text: 'Learn mantle', done: false }],
+ *   onCountChange: (count) => console.log(count)
+ * });
+ * ```
+ */
+export function mount<P extends object>(
+  tag: string,
+  props?: P,
+  container?: Element | string
+): HTMLElement & P {
+  const el = document.createElement(tag) as HTMLElement & P;
+  
+  if (props) {
+    Object.assign(el, props);
+  }
+  
+  const target = typeof container === 'string' 
+    ? document.querySelector(container) 
+    : container ?? document.body;
+    
+  if (!target) {
+    throw new Error(`[@mantle/lit] mount: container "${container}" not found`);
+  }
+  
+  target.appendChild(el);
+  return el;
+}
