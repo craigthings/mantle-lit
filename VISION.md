@@ -138,10 +138,10 @@ export const Counter = createView(CounterView);
 
 ---
 
-### Lit / Web Components (`@mantle/lit`)
+### Lit / Web Components (`mantle-lit`)
 
 ```tsx
-import { View, createView } from '@mantle/lit';
+import { View, createView } from 'mantle-lit';
 import { html } from 'lit';
 
 class CounterView extends View<{ initial: number }> {

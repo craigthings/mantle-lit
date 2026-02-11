@@ -1,7 +1,7 @@
 {
-  "name": "@mantle/lit",
+  "name": "mantle-lit",
   "version": "0.1.0",
-  "description": "A lightweight library for building Lit web components with a familiar class-based API and MobX reactivity built in.",
+  "description": "A lightweight library for building Lit web components with a simpler class-based API and MobX reactivity built in.",
   "author": "Craig Albert <me@craigalbert.com>",
   "repository": {
     "type": "git",

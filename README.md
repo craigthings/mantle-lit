@@ -1,17 +1,11 @@
-# @mantle/lit
+# Mantle Lit
 
-A lightweight library for building Lit web components with a familiar class-based API and MobX reactivity built in. Get full access to the web components ecosystem with simpler DX.
-
-## Why
-
-If you're using MobX for state management, Lit's reactive properties add complexity without benefit. MobX already handles reactivity, dependency tracking, and efficient updates.
-
-The goal is to give developers a way to build web components using patterns common outside the framework world: mutable state, stable references, computed getters, direct method calls. This makes it easier to use vanilla JS libraries while building standards-compliant web components.
+A lightweight library for building Lit web components with a simpler class-based API and MobX reactivity built in.
 
 ## Installation
 
 ```bash
-npm install @mantle/lit
+npm install mantle-lit
 ```
 
 Requires Lit 3+ and MobX 6+.
@@ -19,7 +13,7 @@ Requires Lit 3+ and MobX 6+.
 ## Basic Example
 
 ```ts
-import { View, createView } from '@mantle/lit';
+import { View, createView } from 'mantle-lit';
 import { html } from 'lit';
 
 interface CounterProps {
@@ -220,7 +214,7 @@ Or access props directly in `render()` and MobX handles re-renders when they cha
 State, logic, and template in one class:
 
 ```ts
-import { View, createView } from '@mantle/lit';
+import { View, createView } from 'mantle-lit';
 import { html } from 'lit';
 
 interface TodoItem {
@@ -261,7 +255,7 @@ export const Todo = createView(TodoView, { tag: 'x-todo' });
 ViewModel and template separate:
 
 ```ts
-import { ViewModel, createView } from '@mantle/lit';
+import { ViewModel, createView } from 'mantle-lit';
 import { html } from 'lit';
 
 class TodoViewModel extends ViewModel {
@@ -303,7 +297,7 @@ export const Todo = createView(TodoView, { tag: 'x-todo' });
 For teams that prefer explicit annotations over auto-observable, Mantle provides its own decorators. These are lightweight metadata collectors. No `accessor` keyword required.
 
 ```ts
-import { View, createView, observable, action, computed } from '@mantle/lit';
+import { View, createView, observable, action, computed } from 'mantle-lit';
 import { html } from 'lit';
 
 class TodoView extends View {
@@ -348,7 +342,7 @@ If you prefer using MobX's own decorators (requires `accessor` keyword for TC39)
 
 ```ts
 import { observable, action } from 'mobx';
-import { configure } from '@mantle/lit';
+import { configure } from 'mantle-lit';
 
 // Disable auto-observable globally
 configure({ autoObservable: false });
@@ -370,7 +364,7 @@ Render errors propagate to the browser as usual. Lifecycle errors (`onMount`, `o
 By default, errors are logged to `console.error`. Configure a global handler to integrate with your error reporting:
 
 ```ts
-import { configure } from '@mantle/lit';
+import { configure } from 'mantle-lit';
 
 configure({
   onError: (error, context) => {
@@ -395,7 +389,7 @@ Behaviors are reusable pieces of state and logic that can be shared across views
 ### Defining a Behavior
 
 ```ts
-import { Behavior, createBehavior } from '@mantle/lit';
+import { Behavior, createBehavior } from 'mantle-lit';
 
 class WindowSizeBehavior extends Behavior {
   width = window.innerWidth;
@@ -433,7 +427,7 @@ The naming convention:
 Call the factory function (no `new` keyword) in your View. The `with` prefix signals that the View manages this behavior's lifecycle:
 
 ```ts
-import { View, createView } from '@mantle/lit';
+import { View, createView } from 'mantle-lit';
 import { html } from 'lit';
 import { withWindowSize } from './withWindowSize';
 
@@ -485,7 +479,7 @@ export const withFetch = createBehavior(FetchBehavior);
 Behaviors compose naturally:
 
 ```ts
-import { View, createView } from '@mantle/lit';
+import { View, createView } from 'mantle-lit';
 import { html } from 'lit';
 import { withFetch } from './FetchBehavior';
 import { withWindowSize } from './WindowSizeBehavior';
@@ -526,7 +520,7 @@ Behaviors support the same lifecycle methods as Views:
 Set global defaults for all views. Settings can still be overridden per-view in `createView` options.
 
 ```ts
-import { configure } from '@mantle/lit';
+import { configure } from 'mantle-lit';
 
 // Disable auto-observable globally (for decorator users)
 configure({ autoObservable: false });

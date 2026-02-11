@@ -19,7 +19,7 @@ export interface MantleErrorContext {
 }
 
 /**
- * Global configuration options for @mantle/lit
+ * Global configuration options for mantle-lit
  */
 export interface MantleConfig {
   /** Whether to automatically make View/Behavior instances observable (default: true) */
@@ -38,14 +38,14 @@ export function reportError(error: unknown, context: MantleErrorContext): void {
     globalConfig.onError(error, context);
   } else {
     console.error(
-      `[@mantle/lit] Error in ${context.isBehavior ? 'behavior' : 'view'} ${context.name}.${context.phase}():`,
+      `[mantle-lit] Error in ${context.isBehavior ? 'behavior' : 'view'} ${context.name}.${context.phase}():`,
       error,
     );
   }
 }
 
 /**
- * Configure global defaults for @mantle/lit.
+ * Configure global defaults for mantle-lit.
  * Settings can still be overridden per-view in createView options.
  */
 export function configure(config: MantleConfig): void {

@@ -5,7 +5,7 @@ import './Todo';
 // Create the app container
 const app = document.createElement('div');
 app.className = 'app';
-app.innerHTML = '<h1>mobx-mantle playground</h1>';
+app.innerHTML = '<h1>Mantle Lit Playground</h1>';
 document.body.appendChild(app);
 
 // Mount the todo component

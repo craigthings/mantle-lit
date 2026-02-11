@@ -43,7 +43,7 @@ const BASE_EXCLUDES = new Set([
  * 
  * @example
  * ```ts
- * import { View, createView } from '@mantle/lit';
+ * import { View, createView } from 'mantle-lit';
  * import { html } from 'lit';
  * 
  * class CounterView extends View<{ initial: number }> {
@@ -401,7 +401,7 @@ export function createView<V extends View<any>>(
           const result = this._vm.onMount?.();
           if (process.env.NODE_ENV !== 'production' && result instanceof Promise) {
             console.error(
-              `[@mantle/lit] ${ViewClass.name}.onMount() returned a Promise. ` +
+              `[mantle-lit] ${ViewClass.name}.onMount() returned a Promise. ` +
               `Lifecycle methods must be synchronous. Use a sync onMount that ` +
               `calls an async method instead.`
             );
@@ -455,7 +455,7 @@ export function createView<V extends View<any>>(
 
       if (!this._vm?.render) {
         throw new Error(
-          `[@mantle/lit] ${ViewClass.name}: Missing render() method.`
+          `[mantle-lit] ${ViewClass.name}: Missing render() method.`
         );
       }
 
@@ -487,7 +487,7 @@ export type Props<T> = T;
  * 
  * @example
  * ```ts
- * import { mount } from '@mantle/lit';
+ * import { mount } from 'mantle-lit';
  * import './Todo'; // registers x-todo
  * 
  * mount('x-todo', {
@@ -513,7 +513,7 @@ export function mount<P extends object>(
     : container ?? document.body;
     
   if (!target) {
-    throw new Error(`[@mantle/lit] mount: container "${container}" not found`);
+    throw new Error(`[mantle-lit] mount: container "${container}" not found`);
   }
   
   target.appendChild(el);
