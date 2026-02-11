@@ -13,8 +13,7 @@ Requires Lit 3+ and MobX 6+.
 ## Basic Example
 
 ```ts
-import { View, createView, property } from 'mantle-lit';
-import { html } from 'lit';
+import { View, createView, property, html } from 'mantle-lit';
 
 class CounterView extends View {
   // Props
@@ -62,8 +61,7 @@ declare global {
 Use `@property()` for props:
 
 ```ts
-import { View, createView, property } from 'mantle-lit';
-import { html } from 'lit';
+import { View, createView, property, html } from 'mantle-lit';
 
 interface TodoItem {
   id: number;
@@ -95,11 +93,10 @@ Use property binding (`.prop=${value}`) to pass props in templates.
 
 ## Scoped Styles
 
-Use Lit's `static styles` for component-scoped CSS:
+Use `static styles` for component-scoped CSS:
 
 ```ts
-import { View, createView } from 'mantle-lit';
-import { html, css } from 'lit';
+import { View, createView, html, css } from 'mantle-lit';
 
 class MyView extends View {
   static styles = css`
@@ -124,7 +121,7 @@ For larger components, extract styles to a separate file:
 
 ```ts
 // MyView.styles.ts
-import { css } from 'lit';
+import { css } from 'mantle-lit';
 export const styles = css`...`;
 
 // MyView.ts
@@ -310,11 +307,10 @@ Enable experimental decorators:
 
 ### Combined (default)
 
-State, logic, and template in one class:
+State, logic, and template in one class with a `render()` method:
 
 ```ts
-import { View, createView, property } from 'mantle-lit';
-import { html } from 'lit';
+import { View, createView, property, html } from 'mantle-lit';
 
 interface TodoItem {
   id: number;
@@ -363,15 +359,27 @@ declare global {
 
 ### Separated
 
-ViewModel and template separate:
+ViewModel (state/logic) and template as separate concerns. Pass the template to `createView`:
 
 ```ts
-import { View, createView } from 'mantle-lit';
-import { html } from 'lit';
+import { ViewModel, createView, property, html, css } from 'mantle-lit';
 
-class TodoViewModel extends View {
+interface TodoItem {
+  id: number;
+  text: string;
+  done: boolean;
+}
+
+// ViewModel: pure state and logic (no render method)
+class TodoVM extends ViewModel {
+  @property() initialTodos: TodoItem[] = [];
+
   todos: TodoItem[] = [];
   input = '';
+
+  onCreate() {
+    this.todos = this.initialTodos;
+  }
 
   add() {
     this.todos.push({ id: Date.now(), text: this.input, done: false });
@@ -383,8 +391,8 @@ class TodoViewModel extends View {
   }
 }
 
-// Template as a separate function
-const template = (vm: TodoViewModel) => html`
+// Template: pure presentation
+const template = (vm: TodoVM) => html`
   <div>
     <input .value=${vm.input} @input=${vm.setInput} />
     <button @click=${vm.add}>Add</button>
@@ -392,22 +400,35 @@ const template = (vm: TodoViewModel) => html`
   </div>
 `;
 
-class TodoView extends TodoViewModel {
-  render() {
-    return template(this);
+const styles = css`
+  button { background: #6366f1; color: white; }
+`;
+
+// createView wires them together
+export const Todo = createView(TodoVM, { 
+  tag: 'x-todo',
+  template,
+  styles,
+});
+
+declare global {
+  interface HTMLElementTagNameMap {
+    'x-todo': TodoVM;
   }
 }
-
-export const Todo = createView(TodoView, { tag: 'x-todo' });
 ```
+
+**Benefits of separation:**
+- **Testable**: ViewModel is pure JS, unit test without DOM
+- **Portable**: Same ViewModel could render to React, Vue, etc.
+- **Cleaner**: State logic separate from presentation
 
 ## Decorators
 
 For teams that prefer explicit annotations over auto-observable, Mantle provides its own decorators. These are lightweight metadata collectors. No `accessor` keyword required.
 
 ```ts
-import { View, createView, property, observable, action, computed } from 'mantle-lit';
-import { html } from 'lit';
+import { View, createView, property, observable, action, computed, html } from 'mantle-lit';
 
 class TodoView extends View {
   @property() title = '';
@@ -536,8 +557,7 @@ The naming convention:
 Call the factory function (no `new` keyword) in your View. The `with` prefix signals that the View manages this behavior's lifecycle:
 
 ```ts
-import { View, createView } from 'mantle-lit';
-import { html } from 'lit';
+import { View, createView, html } from 'mantle-lit';
 import { withWindowSize } from './withWindowSize';
 
 class ResponsiveView extends View {
@@ -588,8 +608,7 @@ export const withFetch = createBehavior(FetchBehavior);
 Behaviors compose naturally:
 
 ```ts
-import { View, createView } from 'mantle-lit';
-import { html } from 'lit';
+import { View, createView, html } from 'mantle-lit';
 import { withFetch } from './FetchBehavior';
 import { withWindowSize } from './WindowSizeBehavior';
 
@@ -640,16 +659,18 @@ configure({ autoObservable: false });
 | `autoObservable` | `true` | Whether to automatically make View instances observable |
 | `onError` | `console.error` | Global error handler for lifecycle errors (see [Error Handling](#error-handling)) |
 
-### `View`
+### `View` / `ViewModel`
 
-Base class for view components. Extends `HTMLElement` with MobX integration and lit-html rendering.
+Base class for view components. Pure MobX state container—`createView()` generates the HTMLElement wrapper.
+
+`View` and `ViewModel` are aliases. Use `View` for combined pattern (with `render()`), `ViewModel` for separated pattern (with external template).
 
 | Property/Method | Description |
 |-----------------|-------------|
 | `onCreate()` | Called when instance created |
 | `onMount()` | Called when connected to DOM, return cleanup (optional) |
 | `onUnmount()` | Called when disconnected from DOM (optional) |
-| `render()` | Return Lit `TemplateResult` |
+| `render()` | Optional. Return `TemplateResult`. If omitted, pass `template` to `createView()`. |
 | `watch(expr, callback, options?)` | Watch reactive expression, auto-disposed on unmount |
 
 ### `mount(tag, props, container)`
@@ -697,19 +718,25 @@ export const withMyBehavior = createBehavior(MyBehavior);
 
 ### `createView(ViewClass, options)`
 
-Function that registers a View class as a custom element.
+Creates a custom element from a ViewModel class.
 
 ```ts
-// Basic
+// Combined pattern (ViewModel has render method)
 createView(MyView, { tag: 'x-my-view' })
 
-// With options
-createView(MyView, { tag: 'x-my-view', autoObservable: false })
+// Separated pattern (external template)
+createView(MyVM, { 
+  tag: 'x-my-view',
+  template: (vm) => html`...`,
+  styles: css`...`,
+})
 ```
 
 | Option | Default | Description |
 |--------|---------|-------------|
 | `tag` | (required) | Custom element tag name (must contain a hyphen) |
+| `template` | — | Template function `(vm) => TemplateResult`. Required if ViewModel has no `render()`. |
+| `styles` | — | CSS styles (can also be defined on `ViewModel.styles`) |
 | `autoObservable` | `true` | Make all fields observable. Set to `false` when using decorators. |
 | `shadow` | `true` | Use Shadow DOM. Set to `false` to render in light DOM (allows external CSS). |
 
