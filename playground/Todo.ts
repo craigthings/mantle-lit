@@ -1,4 +1,4 @@
-import { View, createView } from '../src';
+import { View, createView, type PropType } from '../src';
 import { html } from 'lit';
 import { withWindowSize } from './withWindowSize';
 import { styles } from './Todo.styles';
@@ -17,13 +17,12 @@ interface TodoItem {
   done: boolean;
 }
 
-interface TodoProps {
-  title: string;
-  initialTodos?: TodoItem[];
-  onCountChange?: (count: number) => void;
-}
-
-class TodoView extends View<TodoProps> {
+// Using View.props({ ... }) pattern for IDE autocomplete in HTML templates
+class TodoView extends View.props({
+  title: String,
+  initialTodos: Array as PropType<TodoItem[]>,
+  onCountChange: Function as PropType<(count: number) => void>,
+}) {
   static styles = styles;
 
   todos: TodoItem[] = [];

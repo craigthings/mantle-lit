@@ -37,12 +37,15 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "custom-elements.json"
   ],
+  "customElements": "playground/custom-elements.json",
   "sideEffects": false,
   "scripts": {
     "dev": "vite",
-    "build": "tsup",
+    "build": "tsup && npm run analyze",
+    "analyze": "cem analyze",
     "prepublishOnly": "npm run build"
   },
   "peerDependencies": {
@@ -50,6 +53,7 @@
     "mobx": ">=6.0.0"
   },
   "devDependencies": {
+    "@custom-elements-manifest/analyzer": "^0.10.10",
     "@types/node": "^25.2.2",
     "lit": "^3.1.0",
     "mobx": "^6.12.0",

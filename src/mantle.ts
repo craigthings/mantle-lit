@@ -18,6 +18,61 @@ export { observable, action, computed } from './decorators';
 // Re-export from behavior module
 export { createBehavior, Behavior } from './behavior';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Props Type System
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Type helper for complex prop types (arrays, functions, objects).
+ * Use with `as PropType<T>` to specify the exact TypeScript type.
+ * 
+ * @example
+ * ```ts
+ * class TodoView extends View({
+ *   items: Array as PropType<TodoItem[]>,
+ *   onSave: Function as PropType<(item: TodoItem) => void>,
+ * }) { }
+ * ```
+ */
+export interface PropType<T> {
+  // Marker for type inference (not used at runtime)
+  readonly __propType?: T;
+  // Allow it to be assigned from constructors
+  (...args: any[]): any;
+}
+
+/** Supported prop constructor types */
+type PropConstructor = 
+  | StringConstructor 
+  | NumberConstructor 
+  | BooleanConstructor 
+  | ArrayConstructor 
+  | ObjectConstructor 
+  | FunctionConstructor
+  | PropType<any>;
+
+/** Props definition object: { propName: Constructor } */
+type PropsDefinition = Record<string, PropConstructor>;
+
+/** Infer TypeScript type from a prop constructor */
+type InferPropType<T> = 
+  T extends PropType<infer U> ? U :
+  T extends StringConstructor ? string :
+  T extends NumberConstructor ? number :
+  T extends BooleanConstructor ? boolean :
+  T extends ArrayConstructor ? any[] :
+  T extends ObjectConstructor ? object :
+  T extends FunctionConstructor ? (...args: any[]) => any :
+  never;
+
+/** Infer props type from a PropsDefinition */
+type InferProps<T extends PropsDefinition> = {
+  [K in keyof T]: InferPropType<T[K]>;
+};
+
+/** Symbol to store props definition on View subclass */
+const PROPS_DEF = Symbol('propsDefinition');
+
 // Base class members that should not be made observable
 const BASE_EXCLUDES = new Set([
   'props',
@@ -39,14 +94,31 @@ const BASE_EXCLUDES = new Set([
 ]);
 
 /**
- * Base class for Views. Extend this and use createView() to create a custom element.
+ * Base class for Views. Can be used two ways:
+ * 
+ * 1. With generic type parameter (manual props interface):
+ * ```ts
+ * interface CounterProps { initial: number }
+ * class CounterView extends View<CounterProps> { }
+ * ```
+ * 
+ * 2. With props definition (inferred types + IDE autocomplete):
+ * ```ts
+ * class CounterView extends View({
+ *   initial: Number,
+ *   items: Array as PropType<Item[]>,
+ * }) { }
+ * ```
  * 
  * @example
  * ```ts
- * import { View, createView } from 'mantle-lit';
+ * import { View, createView, PropType } from 'mantle-lit';
  * import { html } from 'lit';
  * 
- * class CounterView extends View<{ initial: number }> {
+ * class CounterView extends View({
+ *   initial: Number,
+ *   onCountChange: Function as PropType<(count: number) => void>,
+ * }) {
  *   count = 0;
  * 
  *   onCreate() {
@@ -55,6 +127,7 @@ const BASE_EXCLUDES = new Set([
  * 
  *   increment() {
  *     this.count++;
+ *     this.props.onCountChange?.(this.count);
  *   }
  * 
  *   render() {
@@ -69,7 +142,7 @@ const BASE_EXCLUDES = new Set([
  * export const Counter = createView(CounterView, { tag: 'x-counter' });
  * ```
  */
-export class View<P extends object = {}> {
+export class ViewBase<P extends object = {}> {
   /** @internal */
   _propsBox!: IObservableValue<P>;
 
@@ -189,16 +262,62 @@ export class View<P extends object = {}> {
   }
 
   render?(): TemplateResult | null;
+
+  /** @internal - Props definition for Lit properties */
+  static [PROPS_DEF]?: PropsDefinition;
+}
+
+/**
+ * Creates a View base class with typed props from a props definition.
+ * This enables IDE autocomplete for component properties in HTML templates.
+ * 
+ * @param propsDefinition - Object mapping prop names to their constructors
+ * @returns A View class with typed props
+ * 
+ * @example
+ * ```ts
+ * class TodoView extends View.props({
+ *   title: String,
+ *   items: Array as PropType<TodoItem[]>,
+ *   onSave: Function as PropType<(item: TodoItem) => void>,
+ * }) {
+ *   // this.props.title is typed as string
+ *   // this.props.items is typed as TodoItem[]
+ *   // this.props.onSave is typed as (item: TodoItem) => void
+ * }
+ * ```
+ */
+
+// Type for the class returned by View.props()
+type ViewWithProps<T extends PropsDefinition> = {
+  new(): View<InferProps<T>>;
+  prototype: View<InferProps<T>>;
+  [PROPS_DEF]: T;
+} & Pick<typeof ViewBase, keyof typeof ViewBase>;
+
+// Extend ViewBase with a static `props` method for the factory pattern
+export class View<P extends object = {}> extends ViewBase<P> {
+  /**
+   * Create a View class with typed props from a definition object.
+   * Use this for IDE autocomplete support in HTML templates.
+   */
+  static props<T extends PropsDefinition>(propsDefinition: T): ViewWithProps<T> {
+    // @ts-ignore - Dynamic class creation
+    class TypedView extends View<InferProps<T>> {
+      static [PROPS_DEF] = propsDefinition;
+    }
+    return TypedView as unknown as ViewWithProps<T>;
+  }
 }
 
 /** Alias for View - use when separating ViewModel from template */
-export { View as ViewModel };
+export const ViewModel = View;
 
 /**
  * Creates observable annotations for a View subclass instance.
  * This is needed because makeAutoObservable doesn't work with inheritance.
  */
-function makeViewObservable<T extends View>(instance: T, autoBind: boolean) {
+function makeViewObservable<T extends ViewBase>(instance: T, autoBind: boolean) {
   const annotations: AnnotationsMap<T, never> = {} as AnnotationsMap<T, never>;
 
   // Collect own properties (instance state) → observable
@@ -225,9 +344,9 @@ function makeViewObservable<T extends View>(instance: T, autoBind: boolean) {
     (annotations as any)[key] = observable;
   }
 
-  // Walk prototype chain up to (but not including) View
+  // Walk prototype chain up to (but not including) ViewBase
   let proto = Object.getPrototypeOf(instance);
-  while (proto && proto !== View.prototype) {
+  while (proto && proto !== ViewBase.prototype) {
     const descriptors = Object.getOwnPropertyDescriptors(proto);
 
     for (const [key, descriptor] of Object.entries(descriptors)) {
@@ -249,7 +368,22 @@ function makeViewObservable<T extends View>(instance: T, autoBind: boolean) {
   makeObservable(instance, annotations);
 }
 
-type PropsOf<V> = V extends View<infer P> ? P : object;
+/**
+ * Converts a props definition to Lit's static properties format.
+ */
+function propsDefToLitProperties(propsDef: PropsDefinition): Record<string, any> {
+  const properties: Record<string, any> = {};
+  for (const [key, constructor] of Object.entries(propsDef)) {
+    // Extract the actual constructor (unwrap PropType)
+    const type = (constructor as any).__propType !== undefined 
+      ? Object // PropType<T> becomes Object for Lit
+      : constructor;
+    properties[key] = { type, attribute: false };
+  }
+  return properties;
+}
+
+type PropsOf<V> = V extends ViewBase<infer P> ? P : object;
 
 export interface CreateViewOptions {
   /** Custom element tag name (required, must contain a hyphen) */
@@ -290,7 +424,7 @@ export interface CreateViewOptions {
  * // Usage in HTML: <x-counter .initial=${5}></x-counter>
  * ```
  */
-export function createView<V extends View<any>>(
+export function createView<V extends ViewBase<any>>(
   ViewClass: new () => V,
   options: CreateViewOptions
 ): typeof LitElement {
@@ -298,14 +432,25 @@ export function createView<V extends View<any>>(
 
   const { tag, autoObservable = globalConfig.autoObservable, shadow = true } = options;
 
+  // Get props definition from the View class (if using View.props({ ... }) pattern)
+  // Walk up the prototype chain to find it since it's on the parent class
+  let propsDef: PropsDefinition | undefined;
+  let currentClass: any = ViewClass;
+  while (currentClass && !propsDef) {
+    propsDef = currentClass[PROPS_DEF];
+    currentClass = Object.getPrototypeOf(currentClass);
+  }
+
   // Create the custom element class
   class MantleElement extends LitElement {
     private _vm: V | null = null;
     private _mountCleanup?: () => void;
     private _props: P = {} as P;
 
-    // Lit will call this when any property changes
-    static properties: Record<string, any> = {};
+    // Convert props definition to Lit properties for IDE autocomplete
+    static properties: Record<string, any> = propsDef 
+      ? propsDefToLitProperties(propsDef) 
+      : {};
 
     // Pass through static styles from the View class
     static styles = (ViewClass as any).styles;
@@ -324,9 +469,18 @@ export function createView<V extends View<any>>(
 
       // Capture any properties set on the element before connection
       // This handles imperative property setting: el.foo = value
-      for (const key of Object.keys(this)) {
+      // Check both own properties and Lit-defined properties
+      const propsToCapture = new Set([
+        ...Object.keys(this),
+        ...Object.keys(MantleElement.properties),
+      ]);
+      
+      for (const key of propsToCapture) {
         if (key.startsWith('_')) continue;
-        (this._props as any)[key] = (this as any)[key];
+        const value = (this as any)[key];
+        if (value !== undefined) {
+          (this._props as any)[key] = value;
+        }
       }
 
       const instance = new ViewClass();
@@ -347,7 +501,7 @@ export function createView<V extends View<any>>(
 
         // Walk prototype chain to auto-bind methods not explicitly decorated
         let proto = Object.getPrototypeOf(instance);
-        while (proto && proto !== View.prototype) {
+        while (proto && proto !== ViewBase.prototype) {
           const descriptors = Object.getOwnPropertyDescriptors(proto);
           for (const [key, descriptor] of Object.entries(descriptors)) {
             if (BASE_EXCLUDES.has(key)) continue;

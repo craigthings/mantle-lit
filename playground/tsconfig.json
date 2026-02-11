@@ -8,7 +8,16 @@
     "skipLibCheck": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
-    "noEmit": true
+    "noEmit": true,
+    "plugins": [
+      {
+        "name": "ts-lit-plugin",
+        "rules": {
+          "no-unknown-tag-name": "warning",
+          "no-unknown-attribute": "warning"
+        }
+      }
+    ]
   },
   "include": ["./**/*", "../src/**/*"]
 }

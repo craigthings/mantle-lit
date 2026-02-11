@@ -21,6 +21,7 @@ export {
   
   // Types
   type Props,
+  type PropType,
   type CreateViewOptions,
 } from './mantle';
 

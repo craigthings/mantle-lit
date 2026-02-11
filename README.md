@@ -16,15 +16,13 @@ Requires Lit 3+ and MobX 6+.
 import { View, createView } from 'mantle-lit';
 import { html } from 'lit';
 
-interface CounterProps {
-  initial: number;
-}
-
-class CounterView extends View<CounterProps> {
+class CounterView extends View.props({
+  initial: Number,
+}) {
   count = 0;
 
   onCreate() {
-    this.count = this.props.initial;
+    this.count = this.props.initial ?? 0;
   }
 
   increment() {
@@ -51,6 +49,46 @@ export const Counter = createView(CounterView, { tag: 'x-counter' });
 **Everything is reactive by default.** All properties become observable, getters become computed, and methods become auto-bound actions. No annotations needed.
 
 > Want explicit control? See [Decorators](#decorators) below to opt into manual annotations.
+
+## Defining Props
+
+Use `View.props()` to define component properties with full TypeScript inference:
+
+```ts
+import { View, createView, PropType } from 'mantle-lit';
+
+interface TodoItem {
+  id: number;
+  text: string;
+  done: boolean;
+}
+
+class TodoView extends View.props({
+  title: String,
+  initialTodos: Array as PropType<TodoItem[]>,
+  onCountChange: Function as PropType<(count: number) => void>,
+}) {
+  // this.props.title      → string
+  // this.props.initialTodos → TodoItem[]
+  // this.props.onCountChange → (count: number) => void
+}
+```
+
+**Type constructors:**
+- `String` → `string`
+- `Number` → `number`
+- `Boolean` → `boolean`
+- `Array` → `any[]` (use `PropType<T[]>` for specific types)
+- `Object` → `object` (use `PropType<T>` for specific types)
+- `Function` → `Function` (use `PropType<(args) => R>` for specific signatures)
+
+**No props?** Just extend `View` directly:
+
+```ts
+class SimpleView extends View {
+  // no props needed
+}
+```
 
 ## Property Binding
 
@@ -136,7 +174,9 @@ this.watch(
 **Basic example:**
 
 ```ts
-class SearchView extends View<Props> {
+class SearchView extends View.props({
+  placeholder: String,
+}) {
   query = '';
   results: string[] = [];
 
@@ -206,6 +246,25 @@ onMount() {
 ```
 
 Or access props directly in `render()` and MobX handles re-renders when they change.
+
+## Mounting Components
+
+Use the `mount` helper to imperatively create and mount components:
+
+```ts
+import { mount } from 'mantle-lit';
+import './MyComponent';
+
+// Mount with props
+mount('x-my-component', {
+  title: 'Hello',
+  items: [1, 2, 3],
+  onSelect: (item) => console.log(item),
+}, document.body);
+
+// Returns the created element
+const el = mount('x-counter', { initial: 5 }, container);
+```
 
 ## Patterns
 
@@ -531,18 +590,61 @@ configure({ autoObservable: false });
 | `autoObservable` | `true` | Whether to automatically make View instances observable |
 | `onError` | `console.error` | Global error handler for lifecycle errors (see [Error Handling](#error-handling)) |
 
-### `View<P>` / `ViewModel<P>`
+### `View` / `ViewModel`
 
 Base class for view components. `ViewModel` is an alias for `View`. Use it when separating the ViewModel from the template for semantic clarity.
 
+**Defining props:**
+
+```ts
+class MyView extends View.props({
+  title: String,
+  items: Array as PropType<Item[]>,
+}) {
+  // this.props is fully typed
+}
+```
+
 | Property/Method | Description |
 |-----------------|-------------|
-| `props` | Current props (reactive) |
+| `props` | Current props (reactive, typed based on `View.props()`) |
 | `onCreate()` | Called when instance created |
 | `onMount()` | Called when connected to DOM, return cleanup (optional) |
 | `onUnmount()` | Called when disconnected from DOM (optional) |
 | `render()` | Return Lit `TemplateResult` |
 | `watch(expr, callback, options?)` | Watch reactive expression, auto-disposed on unmount |
+
+### `PropType<T>`
+
+Type helper for complex prop types:
+
+```ts
+import { PropType } from 'mantle-lit';
+
+View.props({
+  items: Array as PropType<MyItem[]>,
+  onSelect: Function as PropType<(item: MyItem) => void>,
+  config: Object as PropType<{ theme: string; debug: boolean }>,
+})
+```
+
+### `mount(tag, props, container)`
+
+Imperatively create and mount a custom element:
+
+```ts
+import { mount } from 'mantle-lit';
+
+const element = mount('x-my-component', { title: 'Hello' }, document.body);
+```
+
+| Argument | Type | Description |
+|----------|------|-------------|
+| `tag` | `string` | Custom element tag name |
+| `props` | `object` | Properties to set on the element |
+| `container` | `Element` | Container to append the element to |
+
+Returns the created element.
 
 ### `Behavior`
 
